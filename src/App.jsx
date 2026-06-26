@@ -3,14 +3,12 @@ import { supabase } from './supabaseClient';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
-import WalletProfile from './pages/WalletProfile'; // Import the new wallet page
+import WalletProfile from './pages/WalletProfile';
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  
-  // Track which view state the user is on: 'main' or 'wallet'
   const [currentView, setCurrentView] = useState('main');
 
   useEffect(() => {
@@ -40,45 +38,44 @@ export default function App() {
 
   const handleLogout = () => supabase.auth.signOut();
 
-  if (loading) return <div style={{ textAlign: 'center', marginTop: '100px' }}>Loading Application...</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-500 font-medium">Loading Application...</div>;
   if (!session) return <Login />;
 
   return (
-    <div>
-      {/* UNIVERSAL NAVBAR WITH INTEGRATED ROUTING ACTION CONTROLS */}
-      <nav style={{ display: 'flex', justifyContent: 'space-between', padding: '15px 30px', background: '#333', color: '#fff', alignItems: 'center' }}>
-        <div>
-          <h3 style={{ margin: 0, display: 'inline-block', marginRight: '20px' }}>🏢 Staff Portal ({profile?.full_name})</h3>
-          
-          {/* Menu Buttons to switch views manually */}
-          <button onClick={() => setCurrentView('main')} style={{ background: currentView === 'main' ? '#0070f3' : 'transparent', color: '#fff', border: '1px solid #fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', marginRight: '10px' }}>
-            🗂️ Workflow Dashboard
-          </button>
-          <button onClick={() => setCurrentView('wallet')} style={{ background: currentView === 'wallet' ? '#0070f3' : 'transparent', color: '#fff', border: '1px solid #fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }}>
-            💳 Wallet & Profile Ledger
-          </button>
+    <div className="min-h-screen bg-slate-50">
+      <nav className="sticky top-0 z-50 bg-slate-900 text-white px-6 py-4 shadow-md flex justify-between items-center">
+        <div className="flex items-center space-x-6">
+          <h3 className="text-lg font-black tracking-wider text-blue-400 uppercase">🏢 CorePortal</h3>
+          <div className="hidden md:flex space-x-2">
+            <button onClick={() => setCurrentView('main')} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${currentView === 'main' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>
+              🗂️ Workflow Dashboard
+            </button>
+            <button onClick={() => setCurrentView('wallet')} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${currentView === 'wallet' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>
+              💳 Wallet Ledger
+            </button>
+          </div>
         </div>
-        <div>
-          <span style={{ marginRight: '15px', textTransform: 'uppercase', fontSize: '12px', background: '#555', padding: '4px 8px', borderRadius: '4px' }}>
-            Role: {profile?.role}
-          </span>
-          <button onClick={handleLogout} style={{ background: '#ff4d4d', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+
+        <div className="flex items-center space-x-4">
+          <div className="text-right">
+            <p className="text-sm font-bold leading-tight">{profile?.full_name}</p>
+            <span className="inline-block text-[10px] font-black tracking-widest uppercase bg-slate-800 text-blue-400 px-2 py-0.5 rounded border border-slate-700 mt-0.5">
+              {profile?.role}
+            </span>
+          </div>
+          <button onClick={handleLogout} className="px-3 py-1.5 bg-red-600/90 hover:bg-red-600 text-white text-xs font-bold rounded-md shadow transition-colors">
             Logout
           </button>
         </div>
       </nav>
 
-      {/* CORE RENDER CONDITIONAL PANEL ROUTING */}
-      {profile?.role === 'admin' ? (
-        <AdminPanel currentUser={profile} />
-      ) : (
-        currentView === 'main' ? (
-          <Dashboard currentUser={profile} />
+      <main className="max-w-7xl mx-auto py-6">
+        {profile?.role === 'admin' ? (
+          <AdminPanel currentUser={profile} />
         ) : (
-          <WalletProfile currentUser={profile} />
-        )
-      )}
+          currentView === 'main' ? <Dashboard currentUser={profile} /> : <WalletProfile currentUser={profile} />
+        )}
+      </main>
     </div>
   );
 }
-//hhh

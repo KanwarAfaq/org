@@ -13,19 +13,15 @@ export default function Login() {
     setLoading(true);
 
     if (isSignUp) {
-      // Sign Up configuration
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: { full_name: fullName } // This triggers the profiles table auto-insert we wrote in Step 1
-        }
+        options: { data: { full_name: fullName } }
       });
       if (error) alert(error.message);
       else alert('Registration successful! Please sign in.');
       setIsSignUp(false);
     } else {
-      // Sign In configuration
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) alert(error.message);
     }
@@ -33,30 +29,44 @@ export default function Login() {
   };
 
   return (
-    <div style={{ maxWidth: '400px', margin: '100px auto', padding: '20px', border: '1px solid #ccc', borderRadius: '8px' }}>
-      <h2>{isSignUp ? 'Create Org Account' : 'Organization Sign In'}</h2>
-      <form onSubmit={handleAuth}>
-        {isSignUp && (
-          <div style={{ marginBottom: '15px' }}>
-            <label>Full Name:</label>
-            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
+    <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
+      <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 border border-slate-200">
+        <div className="text-center mb-8">
+          <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            {isSignUp ? 'Create Account' : 'Welcome Back'}
+          </h2>
+          <p className="text-sm text-slate-500 mt-2">
+            {isSignUp ? 'Join your organization portal' : 'Sign in to manage your workflows'}
+          </p>
+        </div>
+
+        <form onSubmit={handleAuth} className="space-y-5">
+          {isSignUp && (
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">Full Name</label>
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" placeholder="John Doe" />
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Corporate Email</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" placeholder="you@company.com" />
           </div>
-        )}
-        <div style={{ marginBottom: '15px' }}>
-          <label>Email:</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Password</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" placeholder="••••••••" />
+          </div>
+
+          <button type="submit" disabled={loading} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md transition-colors duration-200 disabled:opacity-50">
+            {loading ? 'Processing...' : isSignUp ? 'Create Corporate ID' : 'Sign In'}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center border-t border-slate-100 pt-4">
+          <p className="text-sm text-blue-600 hover:underline cursor-pointer font-medium" onClick={() => setIsSignUp(!isSignUp)}>
+            {isSignUp ? 'Already have an account? Sign In' : "New to the organization? Register here"}
+          </p>
         </div>
-        <div style={{ marginBottom: '15px' }}>
-          <label>Password:</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
-        </div>
-        <button type="submit" disabled={loading} style={{ width: '100%', padding: '10px', backgroundColor: '#0070f3', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-          {loading ? 'Processing...' : isSignUp ? 'Register' : 'Sign In'}
-        </button>
-      </form>
-      <p style={{ marginTop: '20px', textAlign: 'center', cursor: 'pointer', color: '#0070f3' }} onClick={() => setIsSignUp(!isSignUp)}>
-        {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Register"}
-      </p>
+      </div>
     </div>
   );
 }

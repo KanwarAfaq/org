@@ -5,12 +5,9 @@ export default function WalletProfile({ currentUser }) {
   const [approvedTransactions, setApprovedTransactions] = useState([]);
   const [treasury, setTreasury] = useState({ total_initial_budget: 0 });
   const [companyTotalApproved, setCompanyTotalApproved] = useState(0);
-  
-  // Tracking metadata for the cards
   const [lastGlobalUpdate, setLastGlobalUpdate] = useState(null);
   const [lastGlobalUser, setLastGlobalUser] = useState(null);
   const [lastGlobalUserAvatar, setLastGlobalUserAvatar] = useState(null);
-  
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,25 +16,10 @@ export default function WalletProfile({ currentUser }) {
 
   const fetchFinancialData = async () => {
     setLoading(true);
-
-    // 1. Fetch Company Master Treasury Pool
-    const { data: treasuryData } = await supabase
-      .from('company_treasury')
-      .select('total_initial_budget')
-      .eq('id', 1)
-      .single();
+    const { data: treasuryData } = await supabase.from('company_treasury').select('total_initial_budget').eq('id', 1).single();
     if (treasuryData) setTreasury(treasuryData);
 
-    // 2. Fetch ALL Approved items across the company + join with user profile for pictures
-    const { data: allApproved } = await supabase
-      .from('posts')
-      .select(`
-        content, 
-        created_at,
-        tagged:profiles!posts_tagged_member_id_fkey(full_name, avatar_url)
-      `)
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false });
+    const { data: allApproved } = await supabase.from('posts').select(`content, created_at, tagged:profiles!posts_tagged_member_id_fkey(full_name, avatar_url)`).eq('status', 'approved').order('created_at', { ascending: false });
 
     let globalSum = 0;
     if (allApproved && allApproved.length > 0) {
@@ -45,8 +27,6 @@ export default function WalletProfile({ currentUser }) {
         const match = p.content.match(/\$([0-9.]+)/);
         if (match) globalSum += parseFloat(match[1]);
       });
-      
-      // Extract data for the absolute latest claim made in the company
       const latestClaim = allApproved[0];
       setLastGlobalUpdate(new Date(latestClaim.created_at).toLocaleString());
       setLastGlobalUser(latestClaim.tagged?.full_name || 'System Member');
@@ -54,22 +34,13 @@ export default function WalletProfile({ currentUser }) {
     }
     setCompanyTotalApproved(globalSum);
 
-    // 3. Fetch specific history ledger rows for THIS logged-in user
-    const { data: myLedger } = await supabase
-      .from('posts')
-      .select('*, author:profiles!posts_author_id_fkey(full_name)')
-      .eq('tagged_member_id', currentUser.id)
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false });
-
+    const { data: myLedger } = await supabase.from('posts').select('*, author:profiles!posts_author_id_fkey(full_name)').eq('tagged_member_id', currentUser.id).eq('status', 'approved').order('created_at', { ascending: false });
     if (myLedger) setApprovedTransactions(myLedger);
     setLoading(false);
   };
 
-  // Calculations
   const companyInitial = Number(treasury?.total_initial_budget || 0);
   const remainingCompanyBudget = companyInitial - companyTotalApproved;
-
   const userTotalApproved = approvedTransactions.reduce((acc, p) => {
     const match = p.content.match(/\$([0-9.]+)/);
     return acc + (match ? parseFloat(match[1]) : 0);
@@ -78,117 +49,91 @@ export default function WalletProfile({ currentUser }) {
   const latestUserTx = approvedTransactions[0];
   const latestUserTxAmount = latestUserTx ? (latestUserTx.content.match(/\$([0-9.]+)/)?.[1] || 0) : 0;
 
-  if (loading) return <div style={{ padding: '30px' }}>Loading Financial Data Ledger...</div>;
+  if (loading) return <div className="p-8 text-center text-slate-500 font-medium">Syncing Wallet Ledgers...</div>;
 
   return (
-    <div style={{ padding: '30px', fontFamily: 'sans-serif', maxWidth: '1200px', margin: '0 auto' }}>
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <h2 className="text-xl font-extrabold text-slate-900 tracking-tight border-b pb-3 border-slate-200">🏦 Organization Financial Treasury</h2>
       
-      {/* SECTION 1: GLOBAL COMPANY TREASURY MASTER HUD */}
-      <h2 style={{ borderBottom: '2px solid #333', paddingBottom: '10px' }}>🏦 Organization Financial Treasury</h2>
-      
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '30px' }}>
-        
-        {/* TOTAL COMPANY FUNDS CARD */}
-        <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '20px', borderRadius: '6px' }}>
-          <span style={{ color: '#64748b', fontWeight: 'bold', fontSize: '13px' }}>TOTAL COMPANY FUNDS</span>
-          <h2 style={{ margin: '5px 0 0 0', color: '#0f172a' }}>${companyInitial.toLocaleString()}</h2>
-          <p style={{ margin: '10px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>
-            📅 Last Configuration Update: {new Date().toLocaleDateString()}
-          </p>
+      {/* HUD DASHBOARD */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total Company Funds</span>
+          <h2 className="text-2xl font-black text-slate-900 mt-1">${companyInitial.toLocaleString()}</h2>
+          <p className="text-[10px] text-slate-400 mt-3 font-medium">📅 Allocation Vault Root Baseline</p>
         </div>
-
-        {/* TOTAL ACCUMULATED CLAIMS CARD (WITH USER PIC + TIME) */}
-        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '20px', borderRadius: '6px' }}>
-          <span style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '13px' }}>TOTAL ACCUMULATED CLAIMS</span>
-          <h2 style={{ margin: '5px 0 0 0', color: '#991b1b' }}>-${companyTotalApproved.toLocaleString()}</h2>
-          
-          {lastGlobalUser ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', borderTop: '1px dashed #fca5a5', paddingTop: '8px' }}>
-              <img 
-                src={lastGlobalUserAvatar} 
-                alt="Profile" 
-                style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover', background: '#ccc' }} 
-              />
-              <div>
-                <p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#7f1d1d' }}>Last Claim by: {lastGlobalUser}</p>
-                <p style={{ margin: 0, fontSize: '11px', color: '#b91c1c' }}>⏱️ {lastGlobalUpdate}</p>
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <span className="text-xs font-bold text-red-400 uppercase tracking-widest">Total Accumulated Claims</span>
+            <h2 className="text-2xl font-black text-red-600 mt-1">-${companyTotalApproved.toLocaleString()}</h2>
+          </div>
+          {lastGlobalUser && (
+            <div className="flex items-center space-x-2.5 pt-3 mt-2 border-t border-dashed border-slate-100">
+              <img src={lastGlobalUserAvatar} className="w-7 h-7 rounded-full object-cover border" alt="" />
+              <div className="text-[11px] leading-tight text-slate-500">
+                <p className="font-bold text-slate-700">Claimed by: {lastGlobalUser}</p>
+                <p className="mt-0.5">⏱️ {lastGlobalUpdate}</p>
               </div>
             </div>
-          ) : (
-            <p style={{ margin: '10px 0 0 0', fontSize: '11px', color: '#fca5a5' }}>No transactions logged yet</p>
           )}
         </div>
-
-        {/* REMAINING COMPANY AMOUNT CARD */}
-        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', padding: '20px', borderRadius: '6px' }}>
-          <span style={{ color: '#16a34a', fontWeight: 'bold', fontSize: '13px' }}>REMAINING COMPANY AMOUNT</span>
-          <h2 style={{ margin: '5px 0 0 0', color: '#166534' }}>${remainingCompanyBudget.toLocaleString()}</h2>
-          <p style={{ margin: '10px 0 0 0', fontSize: '11px', color: '#15803d', fontWeight: 'bold' }}>
-            🔄 Calculated Real-time: {new Date().toLocaleDateString()} - {new Date().toLocaleTimeString()}
-          </p>
+        <div className="bg-emerald-900 text-emerald-100 rounded-xl p-5 shadow-md">
+          <span className="text-xs font-bold text-emerald-300 uppercase tracking-widest">Remaining Company Amount</span>
+          <h2 className="text-2xl font-black text-white mt-1">${remainingCompanyBudget.toLocaleString()}</h2>
+          <p className="text-[10px] text-emerald-300 font-medium mt-3">🔄 Real-time Balance: {new Date().toLocaleTimeString()}</p>
         </div>
-
       </div>
 
-      {/* SECTION 2: USER METRIC ROW */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '4px' }}>
-        
-        <div style={{ background: '#eff6ff', padding: '20px', borderRadius: '6px', border: '1px solid #bfdbfe', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* USER WALLET */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+        <div className="bg-blue-600 text-white rounded-xl p-5 shadow-md flex justify-between items-center">
           <div>
-            <h4 style={{ margin: 0, color: '#1e40af' }}>👤 Your Total Wallet Balance</h4>
-            <span style={{ fontSize: '12px', color: '#60a5fa' }}>All combined approved workflows</span>
+            <h4 className="font-bold text-blue-100 text-sm">👤 Your Personal Wallet Balance</h4>
+            <span className="text-xs text-blue-200">Combined workflow allocations</span>
           </div>
-          <h2 style={{ margin: 0, color: '#1d4ed8' }}>${userTotalApproved.toLocaleString()}</h2>
+          <h2 className="text-3xl font-black">${userTotalApproved.toLocaleString()}</h2>
         </div>
-
-        <div style={{ background: '#faf5ff', padding: '20px', borderRadius: '6px', border: '1px solid #e9d5ff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="bg-purple-900 text-purple-100 rounded-xl p-5 shadow-md flex justify-between items-center">
           <div>
-            <h4 style={{ margin: 0, color: '#6b21a8' }}>⏱️ Your Last Transaction</h4>
-            <span style={{ fontSize: '11px', color: '#a855f7' }}>
-              {latestUserTx ? `Executed: ${new Date(latestUserTx.created_at).toLocaleString()}` : 'No activity logged'}
-            </span>
+            <h4 className="font-bold text-purple-200 text-sm">⏱️ Your Last Transaction</h4>
+            <span className="text-xs text-purple-300">{latestUserTx ? `Executed Ledger Timestamp` : 'No operations recorded'}</span>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <h2 style={{ margin: 0, color: '#7e22ce' }}>
-              {latestUserTx ? `+$${parseFloat(latestUserTxAmount).toLocaleString()}` : '$0'}
-            </h2>
-            <span style={{ fontSize: '11px', color: '#a855f7' }}>Remaining Comp: ${remainingCompanyBudget.toLocaleString()}</span>
+          <div className="text-right">
+            <h2 className="text-2xl font-black text-white">{latestUserTx ? `+$${parseFloat(latestUserTxAmount).toLocaleString()}` : '$0'}</h2>
+            <span className="text-[10px] text-purple-300">Remaining Pool: ${remainingCompanyBudget.toLocaleString()}</span>
           </div>
         </div>
-
       </div>
 
-      {/* SECTION 3: TRANSACTION LOG HISTORY TABLE */}
-      <h3 style={{ marginTop: '40px', marginBottom: '15px' }}>📋 Personal Itemized Transaction Log</h3>
-      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', background: 'white', border: '1px solid #e5e7eb' }}>
-        <thead>
-          <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db' }}>
-            <th style={{ padding: '12px' }}>Request Creator</th>
-            <th style={{ padding: '12px' }}>Operational Action Description</th>
-            <th style={{ padding: '12px' }}>Claim Value</th>
-            <th style={{ padding: '12px' }}>Execution Date & Time</th>
-          </tr>
-        </thead>
-        <tbody>
-          {approvedTransactions.map((post, idx) => {
-            const match = post.content.match(/\$([0-9.]+)/);
-            const valString = match ? `$${parseFloat(match[1]).toLocaleString()}` : '$0';
-            const labelText = post.content.split(' - Amount:')[0];
-
-            return (
-              <tr key={post.id} style={{ borderBottom: '1px solid #e5e7eb', background: idx % 2 === 0 ? '#fff' : '#f9fafb' }}>
-                <td style={{ padding: '12px', fontWeight: 'bold' }}>{post.author?.full_name}</td>
-                <td style={{ padding: '12px' }}>{labelText}</td>
-                <td style={{ padding: '12px', color: '#16a34a', fontWeight: 'bold' }}>{valString}</td>
-                <td style={{ padding: '12px', color: '#6b7280', fontSize: '14px' }}>
-                  🗓️ {new Date(post.created_at).toLocaleString()}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-
+      {/* HISTORY TABLE */}
+      <div className="bg-white border rounded-xl shadow-sm overflow-hidden mt-6">
+        <div className="px-5 py-4 border-b bg-slate-50 font-bold text-slate-800 text-sm tracking-wide">📋 Personal Itemized Transaction Log</div>
+        <table className="w-full text-left border-collapse text-sm">
+          <thead>
+            <tr className="bg-slate-100 text-slate-500 font-semibold text-xs border-b">
+              <th className="p-3">Request Creator</th>
+              <th className="p-3">Operational Allocation Description</th>
+              <th className="p-3">Claim Value</th>
+              <th className="p-3">Execution Date & Time</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {approvedTransactions.length === 0 ? (
+              <tr><td colSpan="4" className="p-8 text-center text-slate-400 italic">No transaction records active.</td></tr>
+            ) : approvedTransactions.map(post => {
+              const match = post.content.match(/\$([0-9.]+)/);
+              return (
+                <tr key={post.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="p-3 font-bold text-slate-800">{post.author?.full_name}</td>
+                  <td className="p-3 text-slate-600">{post.content.split(' - Amount:')[0]}</td>
+                  <td className="p-3 text-green-600 font-bold">${parseFloat(match ? match[1] : 0).toLocaleString()}</td>
+                  <td className="p-3 text-slate-400 text-xs">{new Date(post.created_at).toLocaleString()}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
