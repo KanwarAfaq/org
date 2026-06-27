@@ -1,28 +1,31 @@
 import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
-import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
-import WalletProfile from './pages/WalletProfile';
+import WalletProfile from './pages/WalletProfile'; // Imported to route limited members directly
+import Login from './pages/Login';
 
 export default function App() {
   const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('main');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) fetchProfile(session.user.id);
-      else setLoading(false);
+      if (session) {
+        fetchAndEnsureProfile(session.user);
+      } else {
+        setLoading(false);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) fetchProfile(session.user.id);
-      else {
-        setProfile(null);
+      if (session) {
+        fetchAndEnsureProfile(session.user);
+      } else {
+        setCurrentUser(null);
         setLoading(false);
       }
     });
@@ -30,52 +33,81 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchProfile = async (userId) => {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (data) setProfile(data);
-    setLoading(false);
+  const fetchAndEnsureProfile = async (authUser) => {
+    try {
+      const { data: profilesList, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id);
+
+      if (error) throw error;
+
+      const profile = profilesList && profilesList.length > 0 ? profilesList[0] : null;
+
+      if (!profile) {
+        console.log("Profile row missing inside public table. Executing fallback sync...");
+
+        const defaultProfile = {
+          id: authUser.id,
+          full_name: authUser.user_metadata?.full_name || authUser.email.split('@')[0],
+          email: authUser.email,
+          role: 'member', 
+          total_amount_claimed: 0,
+          is_active: true
+        };
+
+        const { data: insertedRows, error: insertError } = await supabase
+          .from('profiles')
+          .insert(defaultProfile)
+          .select('*');
+
+        if (insertError) throw insertError;
+        
+        if (insertedRows && insertedRows.length > 0) {
+          setCurrentUser(insertedRows[0]);
+        } else {
+          throw new Error("Profile row insertion failed to return data.");
+        }
+      } else {
+        setCurrentUser(profile);
+      }
+    } catch (err) {
+      console.error("Profile synchronization engine error:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleLogout = () => supabase.auth.signOut();
-
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-500 font-medium">Loading Application...</div>;
-  if (!session) return <Login />;
-
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <nav className="sticky top-0 z-50 bg-slate-900 text-white px-6 py-4 shadow-md flex justify-between items-center">
-        <div className="flex items-center space-x-6">
-          <h3 className="text-lg font-black tracking-wider text-blue-400 uppercase">🏢 CorePortal</h3>
-          <div className="hidden md:flex space-x-2">
-            <button onClick={() => setCurrentView('main')} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${currentView === 'main' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>
-              🗂️ Workflow Dashboard
-            </button>
-            <button onClick={() => setCurrentView('wallet')} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${currentView === 'wallet' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>
-              💳 Wallet Ledger
-            </button>
-          </div>
+  if (loading) {
+    return (
+      <div className="min-h-screen p-8 flex items-center justify-center bg-slate-50 font-mono text-xs text-slate-500">
+        <div className="space-y-2 text-center">
+          <div className="h-6 w-6 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin mx-auto" />
+          <p className="uppercase tracking-widest font-bold">Initializing Application Gateways...</p>
         </div>
+      </div>
+    );
+  }
 
-        <div className="flex items-center space-x-4">
-          <div className="text-right">
-            <p className="text-sm font-bold leading-tight">{profile?.full_name}</p>
-            <span className="inline-block text-[10px] font-black tracking-widest uppercase bg-slate-800 text-blue-400 px-2 py-0.5 rounded border border-slate-700 mt-0.5">
-              {profile?.role}
-            </span>
-          </div>
-          <button onClick={handleLogout} className="px-3 py-1.5 bg-red-600/90 hover:bg-red-600 text-white text-xs font-bold rounded-md shadow transition-colors">
-            Logout
-          </button>
-        </div>
-      </nav>
+  if (!session) {
+    return <Login />;
+  }
 
-      <main className="max-w-7xl mx-auto py-6">
-        {profile?.role === 'admin' ? (
-          <AdminPanel currentUser={profile} />
-        ) : (
-          currentView === 'main' ? <Dashboard currentUser={profile} /> : <WalletProfile currentUser={profile} />
-        )}
-      </main>
-    </div>
-  );
+  // ====================================================================
+  // ⚙️ WORKSPACE ROUTER MATRIX
+  // ====================================================================
+  
+  // 1. Admin Routing Gate
+  if (currentUser?.role === 'admin') {
+    return <AdminPanel currentUser={currentUser} />;
+  }
+
+  // 2. Limited Wallet-Only Routing Gate
+  // If you change a profile's role to 'wallet_viewer' in your DB, they bypass the workflow dashboard completely!
+  if (currentUser?.role === 'viewer') {
+    return <WalletProfile currentUser={currentUser} />;
+  }
+
+  // 3. Default Member Gate (Workflow Dashboard)
+  return <Dashboard currentUser={currentUser} />;
 }

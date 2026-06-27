@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
+import WalletProfile from './WalletProfile'; // Direct layout embedding
 
 export default function Dashboard({ currentUser }) {
+  const [currentTab, setCurrentTab] = useState('workflow'); // Tracks active sub-view
   const [category, setCategory] = useState('');
   const [customCategory, setCustomCategory] = useState('');
   const [amount, setAmount] = useState('');
@@ -17,9 +19,10 @@ export default function Dashboard({ currentUser }) {
   const [editContentMap, setEditContentMap] = useState({});
 
   useEffect(() => {
+    if (!currentUser?.id) return;
     fetchUsers();
     fetchDashboardData();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   const fetchUsers = async () => {
     const { data } = await supabase.from('profiles').select('id, full_name').neq('id', currentUser.id);
@@ -28,11 +31,17 @@ export default function Dashboard({ currentUser }) {
 
   const fetchDashboardData = async () => {
     setLoading(true);
-    const { data: inbox } = await supabase.from('posts').select('*, author:profiles!posts_author_id_fkey(full_name)').eq('tagged_member_id', currentUser.id).order('created_at', { ascending: false });
-    const { data: outbox } = await supabase.from('posts').select('*, tagged:profiles!posts_tagged_member_id_fkey(full_name)').eq('author_id', currentUser.id).order('created_at', { ascending: false });
-    if (inbox) setInboxPosts(inbox);
-    if (outbox) setOutboxPosts(outbox);
-    setLoading(false);
+    try {
+      const { data: inbox } = await supabase.from('posts').select('*, author:profiles(full_name)').eq('tagged_member_id', currentUser.id);
+      const { data: outbox } = await supabase.from('posts').select('*, tagged:profiles(full_name)').eq('author_id', currentUser.id);
+      
+      if (inbox) setInboxPosts([...inbox].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      if (outbox) setOutboxPosts([...outbox].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCreatePost = async (e) => {
@@ -46,20 +55,24 @@ export default function Dashboard({ currentUser }) {
     if (note.trim()) structuredContent += ` || NOTE: ${note.trim()}`;
 
     const { data: postData, error: postError } = await supabase.from('posts').insert({
+      id: crypto.randomUUID(),
       author_id: currentUser.id,
       tagged_member_id: selectedTagUser,
       content: structuredContent,
       status: 'pending',
-      flag_color: 'none'
-    }).select().single();
+      flag_color: 'none',
+      created_at: new Date().toISOString()
+    }).select().maybeSingle();
 
     if (postError) return alert(postError.message);
 
     await supabase.from('audit_logs').insert({
+      id: crypto.randomUUID(),
       post_id: postData.id,
       action_taken: 'CREATED',
       performed_by: currentUser.id,
-      notes: `Created request for ${finalCategory}.`
+      notes: `Created request for ${finalCategory}.`,
+      action_timestamp: new Date().toISOString()
     });
 
     alert('Workflow data submitted!');
@@ -73,7 +86,7 @@ export default function Dashboard({ currentUser }) {
       return alert('Provide a reason for this action.');
     }
 
-    const { error } = await supabase.from('posts').update({ status, flag_color: flagColor, action_reason: reason }).eq('id', postId);
+    const { error } = await supabase.from('posts').update({ status, flag_color: flagColor, action_reason: reason, updated_at: new Date().toISOString() }).eq('id', postId);
     if (error) return alert(error.message);
 
     if (status === 'approved') {
@@ -81,19 +94,33 @@ export default function Dashboard({ currentUser }) {
       const amountMatch = specificPost?.content.match(/\$([0-9.]+)/);
       if (amountMatch && amountMatch[1]) {
         const extractedAmount = parseFloat(amountMatch[1]);
-        const { data: profile } = await supabase.from('profiles').select('total_amount_claimed').eq('id', currentUser.id).single();
+        const { data: profile } = await supabase.from('profiles').select('total_amount_claimed').eq('id', currentUser.id).maybeSingle();
         await supabase.from('profiles').update({ total_amount_claimed: (profile?.total_amount_claimed || 0) + extractedAmount }).eq('id', currentUser.id);
       }
     }
 
-    await supabase.from('audit_logs').insert({ post_id: postId, action_taken: status.toUpperCase(), performed_by: currentUser.id, notes: reason || 'Approved.' });
+    await supabase.from('audit_logs').insert({ 
+      id: crypto.randomUUID(),
+      post_id: postId, 
+      action_taken: status.toUpperCase(), 
+      performed_by: currentUser.id, 
+      notes: reason || 'Approved.',
+      action_timestamp: new Date().toISOString()
+    });
     fetchDashboardData();
   };
 
   const handleResubmitPost = async (postId, updatedContent) => {
     if (!updatedContent?.trim()) return alert('Content cannot be blank.');
-    await supabase.from('posts').update({ content: updatedContent, status: 'pending', flag_color: 'none', action_reason: null }).eq('id', postId);
-    await supabase.from('audit_logs').insert({ post_id: postId, action_taken: 'RE-SUBMITTED', performed_by: currentUser.id, notes: 'Author revised content.' });
+    await supabase.from('posts').update({ content: updatedContent, status: 'pending', flag_color: 'none', action_reason: null, updated_at: new Date().toISOString() }).eq('id', postId);
+    await supabase.from('audit_logs').insert({ 
+      id: crypto.randomUUID(),
+      post_id: postId, 
+      action_taken: 'RE-SUBMITTED', 
+      performed_by: currentUser.id, 
+      notes: 'Author revised content.',
+      action_timestamp: new Date().toISOString()
+    });
     alert('Revised post sent!');
     fetchDashboardData();
   };
@@ -103,11 +130,7 @@ export default function Dashboard({ currentUser }) {
     return (
       <div className="space-y-2">
         <p className="text-slate-700 font-medium">{parts[0]}</p>
-        {parts[1] && (
-          <p className="text-xs bg-amber-50 text-amber-800 border-l-4 border-amber-500 p-2.5 rounded-r-md font-sans">
-            💡 {parts[1]}
-          </p>
-        )}
+        {parts[1] && <p className="text-xs bg-amber-50 text-amber-800 border-l-4 border-amber-500 p-2.5 rounded-r-md font-sans">💡 {parts[1]}</p>}
       </div>
     );
   };
@@ -121,108 +144,142 @@ export default function Dashboard({ currentUser }) {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8">
-      {/* WRITING FORM */}
-      <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">📊 New Workflow Submission</h3>
-        <form onSubmit={handleCreatePost} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Request Item</label>
-              <div className="flex gap-2">
-                <select value={category} onChange={(e) => setCategory(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
-                  <option value="">-- Choose Category --</option>
-                  <option value="Inventory Restock">📦 Inventory Restock</option>
-                  <option value="Expense Reimbursement">💰 Expense Reimbursement</option>
-                  <option value="Office Equipment purchase">💻 Office Equipment Purchase</option>
-                  <option value="custom">✍️ Add Custom...</option>
-                </select>
-                {category === 'custom' && <input type="text" placeholder="Category Name" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />}
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Amount ($)</label>
-              <div className="flex gap-2">
-                <select value={amount} onChange={(e) => setAmount(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
-                  <option value="">-- Choose Amount --</option>
-                  <option value="100">$100</option>
-                  <option value="500">$500</option>
-                  <option value="1000">$1,000</option>
-                  <option value="custom">✍️ Custom Type...</option>
-                </select>
-                {amount === 'custom' && <input type="text" placeholder="Exact Amount" value={customAmount} onChange={(e) => setCustomAmount(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />}
-              </div>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Special Note (Optional)</label>
-            <input type="text" placeholder="Context..." value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <div className="flex justify-between items-center pt-4 border-t border-slate-100">
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-semibold text-slate-700">Assign Verifier:</label>
-              <select value={selectedTagUser} onChange={(e) => setSelectedTagUser(e.target.value)} required className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500">
-                <option value="">-- Select Colleague --</option>
-                {allUsers.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-              </select>
-            </div>
-            <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-5 py-2 rounded-lg shadow-md transition-all">🚀 Send</button>
-          </div>
-        </form>
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      
+      {/* INTERNAL NAVIGATION HEADER FOR STANDARD MEMBERS */}
+      <div className="bg-slate-900 rounded-xl p-4 shadow-lg flex justify-between items-center text-white">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-black text-blue-400 tracking-wider mr-2 uppercase">📊 Member Hub:</span>
+          
+          <button 
+            type="button" 
+            onClick={() => setCurrentTab('workflow')} 
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'workflow' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+          >
+            📋 Workflow Requests
+          </button>
+          
+          <button 
+            type="button" 
+            onClick={() => setCurrentTab('wallet')} 
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'wallet' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+          >
+            🏦 Financial Wallet
+          </button>
+        </div>
+        <button type="button" onClick={fetchDashboardData} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-1 rounded font-mono hover:bg-slate-700">REFRESH DATA</button>
       </div>
 
-      {/* COLUMNS SPLIT */}
-      {loading ? <div className="text-center text-slate-500">Syncing workflows...</div> : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* INBOX */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📥 ACTION REQUIRED BY YOU</h3>
-            {inboxPosts.length === 0 ? <p className="text-sm text-slate-400 bg-white border rounded-xl p-6 text-center shadow-inner">All caught up!</p> : inboxPosts.map(post => (
-              <div key={post.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-                <div className="flex justify-between items-start">
-                  <p className="text-sm font-bold text-slate-900">From: <span className="font-normal text-slate-600">{post.author?.full_name}</span></p>
-                  <span className={getFlagBadge(post.flag_color)}>{post.status}</span>
-                </div>
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">{renderPostContentWithNote(post.content)}</div>
-                {post.status !== 'pending' && <p className="text-xs text-green-600 font-bold">✅ Logged at: {new Date(post.created_at).toLocaleString()}</p>}
-                {post.action_reason && <p className="text-xs text-slate-500 italic bg-slate-50 p-2 rounded">Note: {post.action_reason}</p>}
-                {post.status === 'pending' && (
-                  <div className="space-y-2 pt-2 border-t border-slate-100">
-                    <input type="text" placeholder="Reason if rejecting/editing..." value={reasonMap[post.id] || ''} onChange={(e) => setReasonMap({...reasonMap, [post.id]: e.target.value})} className="w-full text-xs px-3 py-2 bg-slate-50 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    <div className="flex gap-2 justify-end">
-                      <button onClick={() => handleWorkflowAction(post.id, 'approved', 'green')} className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Approve</button>
-                      <button onClick={() => handleWorkflowAction(post.id, 'disapproved', 'red')} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Deny</button>
-                      <button onClick={() => handleWorkflowAction(post.id, 'edit_requested', 'blue')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Request Edit</button>
-                    </div>
+      {/* RENDER CHANNELS MATRIX */}
+      {currentTab === 'wallet' ? (
+        <div className="animate-fadeIn">
+          <WalletProfile currentUser={currentUser} />
+        </div>
+      ) : (
+        <div className="space-y-8 animate-fadeIn">
+          {/* WRITING FORM */}
+          <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">📊 New Workflow Submission</h3>
+            <form onSubmit={handleCreatePost} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Request Item</label>
+                  <div className="flex gap-2">
+                    <select value={category} onChange={(e) => setCategory(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                      <option value="">-- Choose Category --</option>
+                      <option value="Inventory Restock">📦 Inventory Restock</option>
+                      <option value="Expense Reimbursement">💰 Expense Reimbursement</option>
+                      <option value="Office Equipment purchase">💻 Office Equipment Purchase</option>
+                      <option value="custom">✍️ Add Custom...</option>
+                    </select>
+                    {category === 'custom' && <input type="text" placeholder="Category Name" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />}
                   </div>
-                )}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Amount ($)</label>
+                  <div className="flex gap-2">
+                    <select value={amount} onChange={(e) => setAmount(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                      <option value="">-- Choose Amount --</option>
+                      <option value="100">$100</option>
+                      <option value="500">$500</option>
+                      <option value="1000">$1,000</option>
+                      <option value="custom">✍️ Custom Type...</option>
+                    </select>
+                    {amount === 'custom' && <input type="text" placeholder="Exact Amount" value={customAmount} onChange={(e) => setCustomAmount(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />}
+                  </div>
+                </div>
               </div>
-            ))}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Special Note (Optional)</label>
+                <input type="text" placeholder="Context..." value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                <div className="flex items-center space-x-2">
+                  <label className="text-sm font-semibold text-slate-700">Assign Verifier:</label>
+                  <select value={selectedTagUser} onChange={(e) => setSelectedTagUser(e.target.value)} required className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500">
+                    <option value="">-- Select Colleague --</option>
+                    {allUsers.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                  </select>
+                </div>
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-5 py-2 rounded-lg shadow-md transition-all">🚀 Send</button>
+              </div>
+            </form>
           </div>
 
-          {/* OUTBOX */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📤 YOUR TRACKING LOG</h3>
-            {outboxPosts.length === 0 ? <p className="text-sm text-slate-400 bg-white border rounded-xl p-6 text-center shadow-inner">No submissions logged.</p> : outboxPosts.map(post => (
-              <div key={post.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3">
-                {post.status === 'edit_requested' ? (
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-blue-600 uppercase">✏️ Revise Your Submission:</label>
-                    <textarea value={editContentMap[post.id] !== undefined ? editContentMap[post.id] : post.content} onChange={(e) => setEditContentMap({...editContentMap, [post.id]: e.target.value})} className="w-full text-sm p-2 bg-slate-50 border rounded-lg focus:ring-2 focus:ring-blue-500 h-16" />
-                    <button onClick={() => handleResubmitPost(post.id, editContentMap[post.id] || post.content)} className="bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">🔄 Re-Submit</button>
+          {/* GRID COLUMNS */}
+          {loading ? <div className="text-center text-slate-500">Syncing active workflows...</div> : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* INBOX */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📥 ACTION REQUIRED BY YOU</h3>
+                {inboxPosts.length === 0 ? <p className="text-sm text-slate-400 bg-white border rounded-xl p-6 text-center shadow-inner">All caught up!</p> : inboxPosts.map(post => (
+                  <div key={post.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+                    <div className="flex justify-between items-start">
+                      <p className="text-sm font-bold text-slate-900">From: <span className="font-normal text-slate-600">{post.author?.full_name}</span></p>
+                      <span className={getFlagBadge(post.flag_color)}>{post.status}</span>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">{renderPostContentWithNote(post.content)}</div>
+                    {post.status !== 'pending' && <p className="text-xs text-green-600 font-bold">✅ Handled: {new Date(post.updated_at || post.created_at).toLocaleString()}</p>}
+                    {post.action_reason && <p className="text-xs text-slate-500 italic bg-slate-50 p-2 rounded">Note: {post.action_reason}</p>}
+                    {post.status === 'pending' && (
+                      <div className="space-y-2 pt-2 border-t border-slate-100">
+                        <input type="text" placeholder="Reason if rejecting/editing..." value={reasonMap[post.id] || ''} onChange={(e) => setReasonMap({...reasonMap, [post.id]: e.target.value})} className="w-full text-xs px-3 py-2 bg-slate-50 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={() => handleWorkflowAction(post.id, 'approved', 'green')} className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Approve</button>
+                          <button onClick={() => handleWorkflowAction(post.id, 'disapproved', 'red')} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Deny</button>
+                          <button onClick={() => handleWorkflowAction(post.id, 'edit_requested', 'blue')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Request Edit</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">{renderPostContentWithNote(post.content)}</div>
-                )}
-                <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-50">
-                  <span className="text-slate-500">Reviewer: <strong>{post.tagged?.full_name}</strong></span>
-                  <span className={getFlagBadge(post.flag_color)}>{post.status}</span>
-                </div>
-                {post.status !== 'pending' && <p className="text-xs text-blue-600 font-bold">⏱️ Handled on: {new Date(post.created_at).toLocaleString()}</p>}
-                {post.action_reason && <p className="text-xs bg-purple-50 text-purple-700 p-2 rounded">Feedback: {post.action_reason}</p>}
+                ))}
               </div>
-            ))}
-          </div>
+
+              {/* OUTBOX */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📤 YOUR TRACKING LOG</h3>
+                {outboxPosts.length === 0 ? <p className="text-sm text-slate-400 bg-white border rounded-xl p-6 text-center shadow-inner">No submissions logged.</p> : outboxPosts.map(post => (
+                  <div key={post.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3">
+                    {post.status === 'edit_requested' ? (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-blue-600 uppercase">✏️ Revise Your Submission:</label>
+                        <textarea value={editContentMap[post.id] !== undefined ? editContentMap[post.id] : post.content} onChange={(e) => setEditContentMap({...editContentMap, [post.id]: e.target.value})} className="w-full text-sm p-2 bg-slate-50 border rounded-lg focus:ring-2 focus:ring-blue-500 h-16" />
+                        <button onClick={() => handleResubmitPost(post.id, editContentMap[post.id] || post.content)} className="bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">🔄 Re-Submit</button>
+                      </div>
+                    ) : (
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">{renderPostContentWithNote(post.content)}</div>
+                    )}
+                    <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-50">
+                      <span className="text-slate-500">Reviewer: <strong>{post.tagged?.full_name}</strong></span>
+                      <span className={getFlagBadge(post.flag_color)}>{post.status}</span>
+                    </div>
+                    {post.status !== 'pending' && <p className="text-xs text-blue-600 font-bold">⏱️ Handled on: {new Date(post.updated_at || post.created_at).toLocaleString()}</p>}
+                    {post.action_reason && <p className="text-xs bg-purple-50 text-purple-700 p-2 rounded">Feedback: {post.action_reason}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
