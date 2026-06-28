@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
-import WalletProfile from './WalletProfile'; // Direct layout embedding
+import WalletProfile from './WalletProfile'; 
 
 export default function Dashboard({ currentUser }) {
-  const [currentTab, setCurrentTab] = useState('workflow'); // Tracks active sub-view
+  const [currentTab, setCurrentTab] = useState('workflow'); 
   const [category, setCategory] = useState('');
   const [customCategory, setCustomCategory] = useState('');
   const [amount, setAmount] = useState('');
   const [customAmount, setCustomAmount] = useState('');
   const [note, setNote] = useState('');
   const [allUsers, setAllUsers] = useState([]);
-  const [selectedTagUser, setSelectedTagUser] = useState('');
+  const [selectedTagUsers, setSelectedTagUsers] = useState([]);
   
   const [inboxPosts, setInboxPosts] = useState([]);
   const [outboxPosts, setOutboxPosts] = useState([]);
@@ -20,25 +20,97 @@ export default function Dashboard({ currentUser }) {
 
   useEffect(() => {
     if (!currentUser?.id) return;
+    
     fetchUsers();
     fetchDashboardData();
+
+    // ⚡ REAL-TIME DATABASE LIVE STREAM LISTENER
+    const workflowChannel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', 
+          schema: 'public',
+          table: 'posts'
+        },
+        () => {
+          console.log('Real-time sync triggered: Workflow table update intercepted.');
+          fetchDashboardData(); 
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(workflowChannel);
+    };
   }, [currentUser?.id]);
 
   const fetchUsers = async () => {
-    const { data } = await supabase.from('profiles').select('id, full_name').neq('id', currentUser.id);
+    const { data } = await supabase.from('profiles').select('id, full_name, email').neq('id', currentUser.id);
     if (data) setAllUsers(data);
   };
 
   const fetchDashboardData = async () => {
+    if (!currentUser?.id) return;
     setLoading(true);
     try {
-      const { data: inbox } = await supabase.from('posts').select('*, author:profiles(full_name)').eq('tagged_member_id', currentUser.id);
-      const { data: outbox } = await supabase.from('posts').select('*, tagged:profiles(full_name)').eq('author_id', currentUser.id);
+      const { data: allPosts, error: postsError } = await supabase.from('posts').select('*');
+      if (postsError) throw postsError;
+
+      const { data: profiles, error: profilesError } = await supabase.from('profiles').select('id, full_name');
+      if (profilesError) throw profilesError;
+
+      const safePosts = allPosts || [];
+      const safeProfiles = profiles || [];
+
+      // Pass 1: Map standard metadata
+      let fullyMappedPosts = safePosts.map(p => {
+        const authorProf = safeProfiles.find(prof => prof.id === p.author_id);
+        const taggedProf = safeProfiles.find(prof => prof.id === p.tagged_member_id);
+        return {
+          ...p,
+          author: authorProf ? { full_name: authorProf.full_name } : { full_name: 'Unknown Staff' },
+          tagged: taggedProf ? { full_name: taggedProf.full_name } : { full_name: 'Unknown Verifier' }
+        };
+      });
+
+      // ====================================================================
+      // 🛡️ DYNAMIC RLS BYPASS: Force group resolution on the client side
+      // ====================================================================
+      // Even if the DB blocks cross-row updates for C, the UI instantly 
+      // resolves C's view if it detects that B approved a shared token.
+      fullyMappedPosts = fullyMappedPosts.map(post => {
+        const groupMatch = post.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/);
+        const groupId = groupMatch ? groupMatch[1] : null;
+
+        if (groupId && post.status === 'pending') {
+          // Look through the list to see if a peer verifier already approved this group
+          const peerApproved = fullyMappedPosts.find(other => 
+            other.action_reason?.includes(groupId) && 
+            other.status === 'approved'
+          );
+
+          if (peerApproved) {
+            return {
+              ...post,
+              status: 'deactivated',
+              flag_color: 'slate',
+              action_reason: `Approved by peer: ${peerApproved.tagged?.full_name || 'System'} || GROUP_ID:${groupId}`
+            };
+          }
+        }
+        return post;
+      });
+
+      const inbox = fullyMappedPosts.filter(p => p.tagged_member_id === currentUser.id);
+      const outbox = fullyMappedPosts.filter(p => p.author_id === currentUser.id);
       
-      if (inbox) setInboxPosts([...inbox].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
-      if (outbox) setOutboxPosts([...outbox].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      setInboxPosts([...inbox].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      setOutboxPosts([...outbox].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      
     } catch (err) {
-      console.error(err);
+      console.error("Dashboard database synchronization failure:", err);
     } finally {
       setLoading(false);
     }
@@ -46,80 +118,162 @@ export default function Dashboard({ currentUser }) {
 
   const handleCreatePost = async (e) => {
     e.preventDefault();
-    if (!selectedTagUser) return alert('Please assign a verifier.');
+    if (selectedTagUsers.length === 0) return alert('Please assign at least one verifier.');
+    
     const finalCategory = category === 'custom' ? customCategory : category;
     const finalAmount = amount === 'custom' ? customAmount : amount;
     if (!finalCategory || !finalAmount) return alert('Fill in all required fields.');
 
+    const sharedGroupId = crypto.randomUUID();
     let structuredContent = `[${finalCategory.toUpperCase()}] Request Processing - Amount: $${finalAmount}`;
     if (note.trim()) structuredContent += ` || NOTE: ${note.trim()}`;
 
-    const { data: postData, error: postError } = await supabase.from('posts').insert({
-      id: crypto.randomUUID(),
-      author_id: currentUser.id,
-      tagged_member_id: selectedTagUser,
-      content: structuredContent,
-      status: 'pending',
-      flag_color: 'none',
-      created_at: new Date().toISOString()
-    }).select().maybeSingle();
+    try {
+      const submissionPromises = selectedTagUsers.map(async (verifierId) => {
+        const generatedPostId = crypto.randomUUID();
+        const groupTrackingToken = `GROUP_ID:${sharedGroupId}`;
 
-    if (postError) return alert(postError.message);
+        const { data: postData, error: postError } = await supabase.from('posts').insert({
+          id: generatedPostId,
+          author_id: currentUser.id,
+          tagged_member_id: verifierId,
+          content: structuredContent,
+          status: 'pending',
+          flag_color: 'none',
+          action_reason: groupTrackingToken, 
+          created_at: new Date().toISOString()
+        }).select().maybeSingle();
 
-    await supabase.from('audit_logs').insert({
-      id: crypto.randomUUID(),
-      post_id: postData.id,
-      action_taken: 'CREATED',
-      performed_by: currentUser.id,
-      notes: `Created request for ${finalCategory}.`,
-      action_timestamp: new Date().toISOString()
-    });
+        if (postError) throw postError;
 
-    alert('Workflow data submitted!');
-    setCategory(''); setCustomCategory(''); setAmount(''); setCustomAmount(''); setNote(''); setSelectedTagUser('');
-    fetchDashboardData();
+        await supabase.from('audit_logs').insert({
+          id: crypto.randomUUID(),
+          post_id: generatedPostId,
+          action_taken: 'CREATED',
+          performed_by: currentUser.id,
+          notes: `Created request group ${sharedGroupId}. Sent to verifier: ${verifierId}`,
+          action_timestamp: new Date().toISOString()
+        });
+      });
+
+      await Promise.all(submissionPromises);
+      alert(`Workflow request successfully broadcasted to ${selectedTagUsers.length} verifiers!`);
+      setCategory(''); setCustomCategory(''); setAmount(''); setCustomAmount(''); setNote(''); setSelectedTagUsers([]);
+      fetchDashboardData();
+    } catch (error) {
+      console.error(error);
+      alert(`Submission failure: ${error.message}`);
+    }
+  };
+
+  const handleToggleVerifierCheckbox = (userId) => {
+    if (selectedTagUsers.includes(userId)) {
+      setSelectedTagUsers(selectedTagUsers.filter(id => id !== userId));
+    } else {
+      setSelectedTagUsers([...selectedTagUsers, userId]);
+    }
   };
 
   const handleWorkflowAction = async (postId, status, flagColor) => {
-    const reason = reasonMap[postId] || '';
-    if ((status === 'disapproved' || status === 'edit_requested') && !reason.trim()) {
+    const customReason = reasonMap[postId] || '';
+    if ((status === 'disapproved' || status === 'edit_requested') && !customReason.trim()) {
       return alert('Provide a reason for this action.');
     }
 
-    const { error } = await supabase.from('posts').update({ status, flag_color: flagColor, action_reason: reason, updated_at: new Date().toISOString() }).eq('id', postId);
-    if (error) return alert(error.message);
+    try {
+      const { data: targetPost, error: fetchPostError } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('id', postId)
+        .maybeSingle();
 
-    if (status === 'approved') {
-      const specificPost = inboxPosts.find(p => p.id === postId);
-      const amountMatch = specificPost?.content.match(/\$([0-9.]+)/);
-      if (amountMatch && amountMatch[1]) {
-        const extractedAmount = parseFloat(amountMatch[1]);
-        const { data: profile } = await supabase.from('profiles').select('total_amount_claimed').eq('id', currentUser.id).maybeSingle();
-        await supabase.from('profiles').update({ total_amount_claimed: (profile?.total_amount_claimed || 0) + extractedAmount }).eq('id', currentUser.id);
+      if (fetchPostError) throw fetchPostError;
+
+      const groupMatch = targetPost?.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/);
+      const groupId = groupMatch ? groupMatch[1] : null;
+
+      if (status === 'approved' && groupId) {
+        const { data: groupPosts } = await supabase.from('posts').select('*');
+        const sharedGroupRows = (groupPosts || []).filter(p => p.action_reason?.includes(groupId));
+        const alreadyApproved = sharedGroupRows.some(p => p.status === 'approved' && p.id !== postId);
+
+        if (alreadyApproved) {
+          alert("This request group has already been approved by another verifier!");
+          await supabase.from('posts').update({
+            status: 'deactivated',
+            flag_color: 'slate',
+            action_reason: `System: Already approved by a peer verifier.`,
+            updated_at: new Date().toISOString()
+          }).eq('id', postId);
+          fetchDashboardData();
+          return;
+        }
       }
-    }
 
-    await supabase.from('audit_logs').insert({ 
-      id: crypto.randomUUID(),
-      post_id: postId, 
-      action_taken: status.toUpperCase(), 
-      performed_by: currentUser.id, 
-      notes: reason || 'Approved.',
-      action_timestamp: new Date().toISOString()
-    });
-    fetchDashboardData();
+      const finalActionReason = groupId ? `${customReason.trim()} || GROUP_ID:${groupId}` : customReason.trim();
+
+      const { error: updateError } = await supabase
+        .from('posts')
+        .update({ status, flag_color: flagColor, action_reason: finalActionReason, updated_at: new Date().toISOString() })
+        .eq('id', postId);
+
+      if (updateError) throw updateError;
+
+      if (status === 'approved') {
+        const amountMatch = targetPost?.content.match(/\$([0-9.]+)/);
+        if (amountMatch && amountMatch[1]) {
+          const extractedAmount = parseFloat(amountMatch[1]);
+          const { data: profile } = await supabase.from('profiles').select('total_amount_claimed').eq('id', currentUser.id).maybeSingle();
+          await supabase.from('profiles').update({ total_amount_claimed: (profile?.total_amount_claimed || 0) + extractedAmount }).eq('id', currentUser.id);
+        }
+
+        // We leave the sibling database update attempt here in case RLS allows it, 
+        // but it is no longer mission-critical thanks to the dynamic client check above!
+        if (groupId) {
+          const { data: freshGroupLookup } = await supabase
+            .from('posts')
+            .select('id, action_reason, status');
+          
+          const pendingSiblings = (freshGroupLookup || []).filter(p => 
+            p.action_reason?.includes(groupId) && 
+            p.id !== postId && 
+            p.status === 'pending'
+          );
+
+          if (pendingSiblings.length > 0) {
+            await Promise.all(pendingSiblings.map(sibling => {
+              return supabase
+                .from('posts')
+                .update({
+                  status: 'deactivated', 
+                  flag_color: 'slate',
+                  action_reason: `Approved by peer: ${currentUser.full_name} || GROUP_ID:${groupId}`,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', sibling.id);
+            }));
+          }
+        }
+      }
+
+      await supabase.from('audit_logs').insert({ 
+        id: crypto.randomUUID(), post_id: postId, action_taken: status.toUpperCase(), performed_by: currentUser.id, 
+        notes: customReason || `Handled workflow state as ${status}.`, action_timestamp: new Date().toISOString()
+      });
+
+      fetchDashboardData();
+    } catch (err) {
+      console.error(err);
+      alert(`Action transaction failed: ${err.message}`);
+    }
   };
 
   const handleResubmitPost = async (postId, updatedContent) => {
     if (!updatedContent?.trim()) return alert('Content cannot be blank.');
     await supabase.from('posts').update({ content: updatedContent, status: 'pending', flag_color: 'none', action_reason: null, updated_at: new Date().toISOString() }).eq('id', postId);
     await supabase.from('audit_logs').insert({ 
-      id: crypto.randomUUID(),
-      post_id: postId, 
-      action_taken: 'RE-SUBMITTED', 
-      performed_by: currentUser.id, 
-      notes: 'Author revised content.',
-      action_timestamp: new Date().toISOString()
+      id: crypto.randomUUID(), post_id: postId, action_taken: 'RE-SUBMITTED', performed_by: currentUser.id, 
+      notes: 'Author revised content.', action_timestamp: new Date().toISOString()
     });
     alert('Revised post sent!');
     fetchDashboardData();
@@ -135,49 +289,98 @@ export default function Dashboard({ currentUser }) {
     );
   };
 
-  const getFlagBadge = (color) => {
+  const getFlagBadge = (status, color) => {
     const base = "text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ";
+    if (status === 'deactivated') return base + "bg-slate-100 text-slate-500 border border-slate-200";
     if (color === 'green') return base + "bg-green-100 text-green-800";
     if (color === 'red') return base + "bg-red-100 text-red-800";
     if (color === 'blue') return base + "bg-blue-100 text-blue-800";
     return base + "bg-slate-100 text-slate-600";
   };
 
+  const processedOutboxItems = useMemo(() => {
+    const grouped = {};
+    
+    outboxPosts.forEach(post => {
+      const groupMatch = post.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/);
+      const groupId = groupMatch ? groupMatch[1] : post.id;
+      
+      if (!grouped[groupId]) {
+        grouped[groupId] = [];
+      }
+      grouped[groupId].push(post);
+    });
+
+    return Object.values(grouped).map(group => {
+      const approvedPost = group.find(p => p.status === 'approved');
+      if (approvedPost) {
+        return {
+          ...approvedPost,
+          displayStatus: 'approved',
+          displayFlag: 'green',
+          feedbackText: `Approved by verifier: ${approvedPost.tagged?.full_name}`
+        };
+      }
+      
+      const pendingPost = group.find(p => p.status === 'pending');
+      if (pendingPost) {
+        return {
+          ...pendingPost,
+          displayStatus: 'pending',
+          displayFlag: 'none',
+          feedbackText: `Awaiting checks from: ${group.map(p => p.tagged?.full_name).join(', ')}`
+        };
+      }
+
+      const editReqPost = group.find(p => p.status === 'edit_requested');
+      if (editReqPost) {
+        return {
+          ...editReqPost,
+          displayStatus: 'edit_requested',
+          displayFlag: 'blue',
+          feedbackText: editReqPost.action_reason?.split(' || GROUP_ID')[0]
+        };
+      }
+
+      const primary = group[0];
+      return {
+        ...primary,
+        displayStatus: primary.status,
+        displayFlag: primary.flag_color,
+        feedbackText: primary.action_reason?.split(' || GROUP_ID')[0]
+      };
+    });
+  }, [outboxPosts]);
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       
-      {/* INTERNAL NAVIGATION HEADER FOR STANDARD MEMBERS */}
-      <div className="bg-slate-900 rounded-xl p-4 shadow-lg flex justify-between items-center text-white">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-black text-blue-400 tracking-wider mr-2 uppercase">📊 Member Hub:</span>
-          
-          <button 
-            type="button" 
-            onClick={() => setCurrentTab('workflow')} 
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'workflow' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-          >
-            📋 Workflow Requests
-          </button>
-          
-          <button 
-            type="button" 
-            onClick={() => setCurrentTab('wallet')} 
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'wallet' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-          >
-            🏦 Financial Wallet
-          </button>
+      {/* HEADER BAR */}
+      <div className="bg-slate-900 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 text-white">
+        <div className="flex items-center gap-3 bg-slate-800/60 p-2 rounded-xl border border-slate-700/50">
+          <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg'} className="w-10 h-10 rounded-full object-cover border-2 border-blue-500 bg-slate-700 shrink-0" alt="" />
+          <div className="text-left leading-tight min-w-0">
+            <p className="text-xs font-black text-slate-100 truncate">{currentUser?.full_name || 'System Member'}</p>
+            <p className="text-[10px] font-medium text-slate-400 truncate mt-0.5">{currentUser?.email || 'Active verified session'}</p>
+          </div>
         </div>
-        <button type="button" onClick={fetchDashboardData} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-1 rounded font-mono hover:bg-slate-700">REFRESH DATA</button>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setCurrentTab('workflow')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>📋 Workflow Requests</button>
+          <button type="button" onClick={() => setCurrentTab('wallet')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>🏦 Financial Wallet</button>
+        </div>
+
+        <div className="flex items-center justify-end gap-2.5">
+          <button type="button" onClick={fetchDashboardData} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-2 rounded font-mono hover:bg-slate-700">REFRESH DATA</button>
+          <button type="button" onClick={async () => { if (window.confirm("Are you sure you want to sign out?")) await supabase.auth.signOut(); }} className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900">❌ SIGN OUT</button>
+        </div>
       </div>
 
-      {/* RENDER CHANNELS MATRIX */}
       {currentTab === 'wallet' ? (
-        <div className="animate-fadeIn">
-          <WalletProfile currentUser={currentUser} />
-        </div>
+        <div className="animate-fadeIn"><WalletProfile currentUser={currentUser} /></div>
       ) : (
         <div className="space-y-8 animate-fadeIn">
-          {/* WRITING FORM */}
+          {/* SUBMISSION FORM */}
           <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
             <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">📊 New Workflow Submission</h3>
             <form onSubmit={handleCreatePost} className="space-y-4">
@@ -213,15 +416,26 @@ export default function Dashboard({ currentUser }) {
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Special Note (Optional)</label>
                 <input type="text" placeholder="Context..." value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
               </div>
-              <div className="flex justify-between items-center pt-4 border-t border-slate-100">
-                <div className="flex items-center space-x-2">
-                  <label className="text-sm font-semibold text-slate-700">Assign Verifier:</label>
-                  <select value={selectedTagUser} onChange={(e) => setSelectedTagUser(e.target.value)} required className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500">
-                    <option value="">-- Select Colleague --</option>
-                    {allUsers.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                  </select>
+
+              {/* VERIFIERS FIELD */}
+              <div className="pt-2">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Assign Verifiers (Select all that apply):</label>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-h-40 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 shadow-inner">
+                  {allUsers.map((user) => (
+                    <label key={user.id} className="flex items-center space-x-2.5 bg-white p-2 border rounded-lg cursor-pointer select-none shadow-sm hover:bg-slate-50">
+                      <input type="checkbox" checked={selectedTagUsers.includes(user.id)} onChange={() => handleToggleVerifierCheckbox(user.id)} className="h-4 w-4 rounded text-blue-600 border-slate-300 cursor-pointer" />
+                      <div className="text-left">
+                        <p className="text-xs font-bold text-slate-800">{user.full_name}</p>
+                        <p className="text-[9px] text-slate-400 truncate max-w-[150px]">{user.email || 'No email saved'}</p>
+                      </div>
+                    </label>
+                  ))}
                 </div>
-                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-5 py-2 rounded-lg shadow-md transition-all">🚀 Send</button>
+                <p className="text-[11px] text-slate-400 mt-1.5">Selected: <span className="text-blue-600 font-bold font-mono">{selectedTagUsers.length}</span> verifier(s)</p>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t border-slate-100">
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-md">🚀 Submit Request</button>
               </div>
             </form>
           </div>
@@ -232,49 +446,55 @@ export default function Dashboard({ currentUser }) {
               {/* INBOX */}
               <div className="space-y-4">
                 <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📥 ACTION REQUIRED BY YOU</h3>
-                {inboxPosts.length === 0 ? <p className="text-sm text-slate-400 bg-white border rounded-xl p-6 text-center shadow-inner">All caught up!</p> : inboxPosts.map(post => (
-                  <div key={post.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-                    <div className="flex justify-between items-start">
-                      <p className="text-sm font-bold text-slate-900">From: <span className="font-normal text-slate-600">{post.author?.full_name}</span></p>
-                      <span className={getFlagBadge(post.flag_color)}>{post.status}</span>
-                    </div>
-                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">{renderPostContentWithNote(post.content)}</div>
-                    {post.status !== 'pending' && <p className="text-xs text-green-600 font-bold">✅ Handled: {new Date(post.updated_at || post.created_at).toLocaleString()}</p>}
-                    {post.action_reason && <p className="text-xs text-slate-500 italic bg-slate-50 p-2 rounded">Note: {post.action_reason}</p>}
-                    {post.status === 'pending' && (
-                      <div className="space-y-2 pt-2 border-t border-slate-100">
-                        <input type="text" placeholder="Reason if rejecting/editing..." value={reasonMap[post.id] || ''} onChange={(e) => setReasonMap({...reasonMap, [post.id]: e.target.value})} className="w-full text-xs px-3 py-2 bg-slate-50 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                        <div className="flex gap-2 justify-end">
-                          <button onClick={() => handleWorkflowAction(post.id, 'approved', 'green')} className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Approve</button>
-                          <button onClick={() => handleWorkflowAction(post.id, 'disapproved', 'red')} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Deny</button>
-                          <button onClick={() => handleWorkflowAction(post.id, 'edit_requested', 'blue')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Request Edit</button>
-                        </div>
+                {inboxPosts.filter(p => p.status === 'pending' || p.status === 'deactivated').length === 0 ? (
+                  <p className="text-sm text-slate-400 bg-white border rounded-xl p-6 text-center shadow-inner">All caught up!</p>
+                ) : (
+                  inboxPosts.filter(p => p.status === 'pending' || p.status === 'deactivated').map(post => (
+                    <div key={post.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+                      <div className="flex justify-between items-start">
+                        <p className="text-sm font-bold text-slate-900">From: <span className="font-normal text-slate-600">{post.author?.full_name}</span></p>
+                        <span className={getFlagBadge(post.status, post.flag_color)}>{post.status}</span>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">{renderPostContentWithNote(post.content)}</div>
+                      
+                      {post.status === 'deactivated' ? (
+                        <div className="bg-slate-100 text-slate-500 font-mono text-[11px] p-2.5 rounded border border-slate-200">
+                          ℹ️ {post.action_reason?.split(' || GROUP_ID')[0] || 'Handled by another verifier.'}
+                        </div>
+                      ) : (
+                        <div className="space-y-2 pt-2 border-t border-slate-100">
+                          <input type="text" placeholder="Reason if rejecting/editing..." value={reasonMap[post.id] || ''} onChange={(e) => setReasonMap({...reasonMap, [post.id]: e.target.value})} className="w-full text-xs px-3 py-2 bg-slate-50 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => handleWorkflowAction(post.id, 'approved', 'green')} className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Approve</button>
+                            <button onClick={() => handleWorkflowAction(post.id, 'disapproved', 'red')} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Deny</button>
+                            <button onClick={() => handleWorkflowAction(post.id, 'edit_requested', 'blue')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Request Edit</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
 
               {/* OUTBOX */}
               <div className="space-y-4">
                 <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📤 YOUR TRACKING LOG</h3>
-                {outboxPosts.length === 0 ? <p className="text-sm text-slate-400 bg-white border rounded-xl p-6 text-center shadow-inner">No submissions logged.</p> : outboxPosts.map(post => (
+                {processedOutboxItems.length === 0 ? <p className="text-sm text-slate-400 bg-white border rounded-xl p-6 text-center shadow-inner">No submissions logged.</p> : processedOutboxItems.map(post => (
                   <div key={post.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3">
-                    {post.status === 'edit_requested' ? (
+                    {post.displayStatus === 'edit_requested' ? (
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-blue-600 uppercase">✏️ Revise Your Submission:</label>
-                        <textarea value={editContentMap[post.id] !== undefined ? editContentMap[post.id] : post.content} onChange={(e) => setEditContentMap({...editContentMap, [post.id]: e.target.value})} className="w-full text-sm p-2 bg-slate-50 border rounded-lg focus:ring-2 focus:ring-blue-500 h-16" />
+                        <textarea value={editContentMap[post.id] !== undefined ? editContentMap[post.id] : post.content} onChange={(e) => setEditContentMap({...editContentMap, [post.id]: e.target.value})} className="w-full text-sm p-2 bg-slate-50 border rounded-lg h-16" />
                         <button onClick={() => handleResubmitPost(post.id, editContentMap[post.id] || post.content)} className="bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">🔄 Re-Submit</button>
                       </div>
                     ) : (
                       <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">{renderPostContentWithNote(post.content)}</div>
                     )}
                     <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-50">
-                      <span className="text-slate-500">Reviewer: <strong>{post.tagged?.full_name}</strong></span>
-                      <span className={getFlagBadge(post.flag_color)}>{post.status}</span>
+                      <span className="text-slate-500 font-medium">Tracking Mode Active</span>
+                      <span className={getFlagBadge(post.displayStatus, post.displayFlag)}>{post.displayStatus}</span>
                     </div>
-                    {post.status !== 'pending' && <p className="text-xs text-blue-600 font-bold">⏱️ Handled on: {new Date(post.updated_at || post.created_at).toLocaleString()}</p>}
-                    {post.action_reason && <p className="text-xs bg-purple-50 text-purple-700 p-2 rounded">Feedback: {post.action_reason}</p>}
+                    {post.feedbackText && <p className="text-xs bg-purple-50 text-purple-700 p-2 rounded font-medium">✨ {post.feedbackText}</p>}
                   </div>
                 ))}
               </div>

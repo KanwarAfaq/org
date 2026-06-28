@@ -18,14 +18,37 @@ export default function Login() {
         password,
         options: { data: { full_name: fullName } }
       });
-      if (error) alert(error.message);
-      else alert('Registration successful! Please sign in.');
-      setIsSignUp(false);
+      if (error) {
+        alert(error.message);
+      } else {
+        alert('Registration successful! If email confirmation is enabled, please verify your email; otherwise, you can sign in directly.');
+        setIsSignUp(false);
+      }
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) alert(error.message);
     }
     setLoading(false);
+  };
+
+  // Dispatch secure password recovery link email
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      alert("Please input your corporate email address above before requesting a password reset.");
+      return;
+    }
+    
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}`, 
+    });
+    setLoading(false);
+
+    if (error) {
+      alert(`Recovery request failed: ${error.message}`);
+    } else {
+      alert("A secure password configuration link has been successfully dispatched to your inbox!");
+    }
   };
 
   return (
@@ -52,7 +75,18 @@ export default function Login() {
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" placeholder="you@company.com" />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Password</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-sm font-semibold text-slate-700">Password</label>
+              {!isSignUp && (
+                <button 
+                  type="button" 
+                  onClick={handleForgotPassword}
+                  className="text-xs text-blue-600 hover:underline font-medium focus:outline-none"
+                >
+                  Forgot Password?
+                </button>
+              )}
+            </div>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" placeholder="••••••••" />
           </div>
 

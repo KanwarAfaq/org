@@ -2,26 +2,31 @@ import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
-import WalletProfile from './pages/WalletProfile'; // Imported to route limited members directly
+import WalletProfile from './pages/WalletProfile'; // Ensure WalletProfile is imported for the viewer role
 import Login from './pages/Login';
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) {
-        fetchAndEnsureProfile(session.user);
-      } else {
-        setLoading(false);
-      }
+      if (session) fetchAndEnsureProfile(session.user);
+      else setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      
+      // Intercept the recovery event fired by clicking the email link
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsResettingPassword(true);
+      }
+
       if (session) {
         fetchAndEnsureProfile(session.user);
       } else {
@@ -41,12 +46,13 @@ export default function App() {
         .eq('id', authUser.id);
 
       if (error) throw error;
-
+      
       const profile = profilesList && profilesList.length > 0 ? profilesList[0] : null;
 
       if (!profile) {
-        console.log("Profile row missing inside public table. Executing fallback sync...");
+        console.log("Profile row missing inside public table. Executing fallback sync configuration...");
 
+        // Direct programmatic fallback creation if the PostgreSQL DB trigger latency causes a query gap
         const defaultProfile = {
           id: authUser.id,
           full_name: authUser.user_metadata?.full_name || authUser.email.split('@')[0],
@@ -65,50 +71,75 @@ export default function App() {
         
         if (insertedRows && insertedRows.length > 0) {
           setCurrentUser(insertedRows[0]);
-        } else {
-          throw new Error("Profile row insertion failed to return data.");
         }
       } else {
         setCurrentUser(profile);
       }
     } catch (err) {
-      console.error("Profile synchronization engine error:", err);
+      console.error("Profile sync error:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) {
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < 6) return alert("Password must be at least 6 characters long.");
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+    if (error) {
+      alert(`Update failed: ${error.message}`);
+    } else {
+      alert("Password updated successfully! Logging you into your workspace...");
+      setIsResettingPassword(false);
+      setNewPassword('');
+    }
+  };
+
+  if (loading) return <div className="p-8 text-center text-xs font-mono">Initializing gateways...</div>;
+
+  // Render the secure Update Password screen if the user arrived via a reset email link
+  if (isResettingPassword) {
     return (
-      <div className="min-h-screen p-8 flex items-center justify-center bg-slate-50 font-mono text-xs text-slate-500">
-        <div className="space-y-2 text-center">
-          <div className="h-6 w-6 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin mx-auto" />
-          <p className="uppercase tracking-widest font-bold">Initializing Application Gateways...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <form onSubmit={handleUpdatePassword} className="bg-white p-6 rounded-xl border border-slate-200 shadow-md max-w-sm w-full space-y-4">
+          <div>
+            <h3 className="text-base font-black text-slate-900 uppercase tracking-wider">🔒 Update Account Password</h3>
+            <p className="text-xs text-slate-400 mt-1">Provide your fresh configuration entry below.</p>
+          </div>
+          <input 
+            type="password" 
+            placeholder="Type new secure password..." 
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className="w-full text-xs p-3 bg-slate-50 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required 
+          />
+          <button type="submit" className="w-full bg-slate-900 text-white font-bold text-xs py-2.5 rounded-lg shadow-md">
+            Save New Password
+          </button>
+        </form>
       </div>
     );
   }
 
-  if (!session) {
-    return <Login />;
-  }
+  if (!session) return <Login />;
 
   // ====================================================================
-  // ⚙️ WORKSPACE ROUTER MATRIX
+  // ⚙️ FIXED: COMPLETE WORKSPACE ROUTER MATRIX FOR ALL 3 ROLES
   // ====================================================================
   
-  // 1. Admin Routing Gate
+  // 1. Admin Control View Gate
   if (currentUser?.role === 'admin') {
     return <AdminPanel currentUser={currentUser} />;
   }
 
-  // 2. Limited Wallet-Only Routing Gate
-  // If you change a profile's role to 'wallet_viewer' in your DB, they bypass the workflow dashboard completely!
+  // 2. Wallet Viewer Limited View Gate
   if (currentUser?.role === 'viewer') {
     return <WalletProfile currentUser={currentUser} />;
   }
 
-  // 3. Default Member Gate (Workflow Dashboard)
+  // 3. Default Member Hybrid View Gate (Shows both Workflow requests & Wallet tabs)
   return <Dashboard currentUser={currentUser} />;
 }
-///
