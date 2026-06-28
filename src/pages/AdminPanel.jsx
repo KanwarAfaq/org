@@ -23,7 +23,17 @@ export default function AdminPanel({ currentUser }) {
     setAdminError('');
 
     try {
-      // 1. Fetch profiles flat
+      // 1. Fetch Master Treasury Balance Directly
+      const { data: treasuryData, error: treasuryError } = await supabase
+        .from('company_treasury')
+        .select('total_initial_budget')
+        .eq('id', 1)
+        .maybeSingle();
+        
+      if (treasuryError) throw treasuryError;
+      setCurrentTreasuryPool(Number(treasuryData?.total_initial_budget || 0));
+
+      // 2. Fetch profiles
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('*')
@@ -31,26 +41,18 @@ export default function AdminPanel({ currentUser }) {
 
       if (profilesError) throw profilesError;
 
-      // 2. FIXED: Fetch posts WITHOUT the nested relation string to avoid PGRST201 embedding errors
+      // 3. Fetch posts safely
       const { data: posts, error: postsError } = await supabase
         .from('posts')
-        .select(`
-          id, 
-          content, 
-          status, 
-          flag_color, 
-          action_reason, 
-          created_at, 
-          updated_at, 
-          author_id, 
-          tagged_member_id
-        `);
+        .select('id, content, status, flag_color, action_reason, created_at, updated_at, author_id, tagged_member_id');
 
       if (postsError) throw postsError;
 
+      // 4. Fetch all logs
       const { data: logs, error: logsError } = await supabase
         .from('audit_logs')
-        .select('*');
+        .select('*')
+        .order('action_timestamp', { ascending: false }); 
 
       if (logsError) throw logsError;
 
@@ -60,8 +62,8 @@ export default function AdminPanel({ currentUser }) {
 
       setAllProfiles(safeProfiles);
       
-      // 3. SAFE CLIENT-SIDE MAPPING: Match author and tagged profiles manually in memory
-      const processedPosts = safePosts.map(p => {
+      // Step A: Map basic user data
+      let processedPosts = safePosts.map(p => {
         const authorProf = safeProfiles.find(prof => prof.id === p.author_id);
         const taggedProf = safeProfiles.find(prof => prof.id === p.tagged_member_id);
         return {
@@ -70,64 +72,39 @@ export default function AdminPanel({ currentUser }) {
           tagged: taggedProf ? { full_name: taggedProf.full_name } : { full_name: 'System User' }
         };
       });
-      setAllPosts(processedPosts);
 
-      // 4. Calculate total active absolute sum from log entries
-      let totalSum = 0;
-      safeLogs.forEach(log => {
-        if (log.action_taken === 'ADMIN_TREASURY_ADJUST') {
-          const parts = (log.notes || '').split('||');
-          if (parts.length >= 4 && parts[4] !== 'DEACTIVATED') {
-            totalSum += parseFloat(parts[1]) || 0;
-          }
-        }
-      });
-      setCurrentTreasuryPool(totalSum);
+      // ====================================================================
+      // 🛡️ DYNAMIC GROUP RESOLUTION (ADMIN SYNC)
+      // ====================================================================
+      // This ensures the Admin sees C's row as deactivated if B already approved it.
+      processedPosts = processedPosts.map(post => {
+        const groupMatch = post.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/);
+        const groupId = groupMatch ? groupMatch[1] : null;
 
-      // 5. Sort logs chronologically by action_timestamp
-      const newestFirstLogs = [...safeLogs].sort((a, b) => {
-        return new Date(b.action_timestamp || 0).getTime() - new Date(a.action_timestamp || 0).getTime();
-      });
+        if (groupId && post.status === 'pending') {
+          const peerApproved = processedPosts.find(other => 
+            other.action_reason?.includes(groupId) && 
+            other.status === 'approved'
+          );
 
-      let runningSumTracker = totalSum;
-
-      const processedLogs = newestFirstLogs.map((log) => {
-        const matchingProfile = safeProfiles.find((p) => p.id === log.performed_by);
-        const performer_name = matchingProfile ? matchingProfile.full_name : 'System/Admin';
-
-        if (log.action_taken === 'ADMIN_TREASURY_ADJUST') {
-          const parts = (log.notes || '').split('||');
-
-          if (parts.length >= 4) {
-            const delta = Number(parts[1] || 0);
-            const stateToken = parts[4] || 'LIVE';
-            const isDeactivated = stateToken === 'DEACTIVATED';
-
-            let safeTotal = 0;
-            let safePrev = 0;
-
-            if (!isDeactivated) {
-              safeTotal = runningSumTracker;
-              runningSumTracker -= delta; 
-              safePrev = runningSumTracker;
-            } else {
-              safeTotal = runningSumTracker;
-              safePrev = runningSumTracker;
-            }
-
-            const safeDelta = Number(Number.isNaN(delta) ? 0 : delta);
-            const safeNote = parts[3] || 'General Adjustment';
-
-            const recompiledNotes = `${safePrev}||${safeDelta}||${safeTotal}||${safeNote}||${stateToken}`;
-
+          if (peerApproved) {
             return {
-              ...log,
-              performer_name,
-              notes: recompiledNotes,
+              ...post,
+              status: 'deactivated',
+              flag_color: 'slate',
+              action_reason: `Resolved by peer: ${peerApproved.tagged?.full_name || 'Another Verifier'} || GROUP_ID:${groupId}`
             };
           }
         }
-        return { ...log, performer_name };
+        return post;
+      });
+
+      setAllPosts(processedPosts);
+
+      // Map performer names to the logs without doing complex string math
+      const processedLogs = safeLogs.map((log) => {
+        const matchingProfile = safeProfiles.find((p) => p.id === log.performed_by);
+        return { ...log, performer_name: matchingProfile ? matchingProfile.full_name : 'System/Admin' };
       });
 
       setAuditLogs(processedLogs);
@@ -154,7 +131,7 @@ export default function AdminPanel({ currentUser }) {
           <button type="button" onClick={() => setAdminSubView('history')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${adminSubView === 'history' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}> Master History Table</button>
           <button type="button" onClick={() => setAdminSubView('directory')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${adminSubView === 'directory' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>👥 Staff Directory</button>
         </div>
-        <button type="button" onClick={fetchAdminData} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-1 rounded font-mono shadow-inner hover:bg-slate-700">REFRESH</button>
+        <button type="button" onClick={fetchAdminData} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-1 rounded font-mono shadow-inner hover:bg-slate-700">REFRESH DATA</button>
       </div>
 
       <div className="w-full">

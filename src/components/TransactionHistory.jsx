@@ -232,65 +232,107 @@ export default function TransactionHistory({
     }
   };
 
-  const handleAdminOverride = async (post, targetStatus, targetFlag) => {
-    if (post.status === targetStatus) {
-      alert(`No changes detected. This transaction is already ${targetStatus}.`);
-      return;
-    }
-
-    const confirmAction = window.confirm(
-      `Admin Override: Force item status from ${String(post.status || 'unknown').toUpperCase()} to ${targetStatus.toUpperCase()}?`
-    );
-
-    if (!confirmAction) return;
-
-    if (processingPostId) return;
-    setProcessingPostId(post.id);
+ const handleAdminOverride = async (postId, newStatus, customReason = '') => {
+    if (!window.confirm(`Are you sure you want to force change this to ${newStatus.toUpperCase()}?`)) return;
 
     try {
-      const extractedAmount = extractAmountFromContent(post.content);
-
-      if (post.status !== 'approved' && targetStatus === 'approved') {
-        await applyApprovedAmount(post, extractedAmount);
-      }
-
-      if (post.status === 'approved' && targetStatus !== 'approved') {
-        await reverseApprovedAmount(post, extractedAmount);
-      }
-
-      const { data, error } = await supabase
+      // 1. Fetch the exact current state of the post
+      const { data: targetPost, error: fetchError } = await supabase
         .from('posts')
-        .update({
-          status: targetStatus,
-          flag_color: targetFlag,
-          action_reason: 'FORCED OVERRIDE BY ADMINISTRATOR',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', post.id)
-        .select('id, status, flag_color, action_reason, updated_at')
-        .maybeSingle();
+        .select('*')
+        .eq('id', postId)
+        .single();
 
-      if (error) throw error;
+      if (fetchError) throw fetchError;
 
-      if (!data) {
-        throw new Error('No post row was updated. Check post id and Supabase RLS policy.');
+      const groupMatch = targetPost?.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/);
+      const groupId = groupMatch ? groupMatch[1] : null;
+      const wasPreviouslyApproved = targetPost.status === 'approved';
+
+      // ====================================================================
+      // 🔄 FINANCIAL CLAWBACK PROTOCOL (If Admin revokes an approval)
+      // ====================================================================
+      if (wasPreviouslyApproved && newStatus !== 'approved') {
+        const amountMatch = targetPost?.content.match(/\$([0-9.,]+)/);
+        
+        if (amountMatch && amountMatch[1]) {
+          const extractedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
+          
+          // Fetch Verifier's current profile balance
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('total_amount_claimed')
+            .eq('id', targetPost.tagged_member_id)
+            .maybeSingle();
+
+          const prevAmount = Number(profile?.total_amount_claimed || 0);
+          const newRepairedAmount = prevAmount - extractedAmount; // Deduct the money!
+
+          // Update Profile
+          await supabase.from('profiles').update({ 
+            total_amount_claimed: newRepairedAmount 
+          }).eq('id', targetPost.tagged_member_id);
+
+          // Insert Negative Ledger Record
+          await supabase.from('member_wallet_logs').insert({
+            id: crypto.randomUUID(),
+            member_id: targetPost.tagged_member_id,
+            post_id: postId,
+            prev_amount: prevAmount,
+            delta_amount: -Math.abs(extractedAmount), // Negative delta
+            new_amount: newRepairedAmount,
+            notes: `⚠️ Admin Reversal: ${customReason || 'Approval Revoked'}`,
+            action_timestamp: new Date().toISOString()
+          });
+        }
       }
 
-      await writeAuditLog({
-        post_id: post.id,
-        action_taken: `ADMIN_${targetStatus.toUpperCase()}`,
-        performed_by: currentUser?.id || null,
-        notes: `Administrative manual override: ${post.status} → ${targetStatus}`,
+      // ====================================================================
+      // 🚫 GROUP VOIDING PROTOCOL (Kill C's row permanently)
+      // ====================================================================
+      if (groupId) {
+        const { data: groupPosts } = await supabase.from('posts').select('id, action_reason').neq('id', postId);
+        const siblingRows = (groupPosts || []).filter(p => p.action_reason?.includes(groupId));
+
+        if (siblingRows.length > 0) {
+          await Promise.all(siblingRows.map(sibling => supabase.from('posts').update({
+            status: 'deactivated',
+            flag_color: 'slate',
+            action_reason: `🔒 Workflow permanently closed by Admin Override || GROUP_ID:${groupId}`,
+            updated_at: new Date().toISOString()
+          }).eq('id', sibling.id)));
+        }
+      }
+
+      // Finally, update the main target post to the new Admin status
+      const flagColor = newStatus === 'approved' ? 'green' : newStatus === 'disapproved' ? 'red' : 'slate';
+      const finalActionReason = groupId ? `Admin Override: ${customReason} || GROUP_ID:${groupId}` : `Admin Override: ${customReason}`;
+
+      await supabase.from('posts').update({ 
+        status: newStatus, 
+        flag_color: flagColor, 
+        action_reason: finalActionReason, 
+        updated_at: new Date().toISOString() 
+      }).eq('id', postId);
+
+      // Log the Admin's action
+      await supabase.from('audit_logs').insert({
+        id: crypto.randomUUID(),
+        post_id: postId,
+        action_taken: `ADMIN_FORCE_${newStatus.toUpperCase()}`,
+        performed_by: currentUser.id,
+        notes: customReason || `Admin forced status change.`,
+        action_timestamp: new Date().toISOString()
       });
 
-      await safeRefresh();
+      alert('Admin override successful. Financials and sibling rows adjusted.');
+      
+      // Call the prop function to refresh the Admin Panel UI
+      if (typeof fetchAdminData === 'function') fetchAdminData();
 
-      alert('Override completed successfully.');
     } catch (err) {
-      console.error('Admin override error:', err);
-      alert(`Override failed: ${err.message}`);
-    } finally {
-      setProcessingPostId(null);
+      console.error(err);
+      alert(`Admin Override Failed: ${err.message}`);
     }
   };
 
