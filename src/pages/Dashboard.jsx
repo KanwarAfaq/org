@@ -18,23 +18,28 @@ export default function Dashboard({ currentUser }) {
   const [reasonMap, setReasonMap] = useState({});
   const [editContentMap, setEditContentMap] = useState({});
 
-  useEffect(() => {
+ useEffect(() => {
     if (!currentUser?.id) return;
     
     fetchUsers();
     fetchDashboardData();
 
-    // ⚡ REAL-TIME DATABASE LIVE STREAM LISTENER
+    // ⚡ UPGRADED REAL-TIME DASHBOARD LISTENER
     const workflowChannel = supabase
       .channel('schema-db-changes')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'posts' },
-        () => { fetchDashboardData(); }
+        { event: '*', schema: 'public' }, // REMOVED the 'table' restriction to listen to EVERYTHING
+        () => {
+          console.log('Real-time sync triggered: Global update intercepted.');
+          fetchDashboardData(); 
+        }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(workflowChannel); };
+    return () => {
+      supabase.removeChannel(workflowChannel);
+    };
   }, [currentUser?.id]);
 
   const fetchUsers = async () => {

@@ -14,8 +14,26 @@ export default function AdminPanel({ currentUser }) {
   const [currentTreasuryPool, setCurrentTreasuryPool] = useState(0);
   const [adminError, setAdminError] = useState('');
 
-  useEffect(() => {
+ useEffect(() => {
     fetchAdminData();
+
+    // ⚡ REAL-TIME ADMIN OVERSIGHT LISTENER
+    // Listens to ALL tables (posts, audit_logs, company_treasury)
+    const adminChannel = supabase
+      .channel('admin-global-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public' }, 
+        () => {
+          console.log('Live Database Update Detected! Refreshing Admin Panel...');
+          fetchAdminData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(adminChannel);
+    };
   }, []);
 
   const fetchAdminData = async () => {

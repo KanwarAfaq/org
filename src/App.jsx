@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
-import WalletProfile from './pages/WalletProfile'; // Ensure WalletProfile is imported for the viewer role
+import SuperAdminLayout from './pages/SuperAdminLayout';
+import WalletProfile from './pages/WalletProfile'; 
 import Login from './pages/Login';
 
 export default function App() {
@@ -11,6 +12,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
+  
+  // NEW: State to toggle between God Mode and Standard View
+  const [appView, setAppView] = useState('dashboard'); 
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -70,10 +74,14 @@ export default function App() {
         if (insertError) throw insertError;
         
         if (insertedRows && insertedRows.length > 0) {
-          setCurrentUser(insertedRows[0]);
+          const newProf = insertedRows[0];
+          setCurrentUser(newProf);
+          if (newProf?.is_super_admin) setAppView('super_admin');
         }
       } else {
         setCurrentUser(profile);
+        // Automatically route Super Admins to the Master Console on login
+        if (profile?.is_super_admin) setAppView('super_admin');
       }
     } catch (err) {
       console.error("Profile sync error:", err);
@@ -127,19 +135,41 @@ export default function App() {
   if (!session) return <Login />;
 
   // ====================================================================
-  // ⚙️ FIXED: COMPLETE WORKSPACE ROUTER MATRIX FOR ALL 3 ROLES
+  // DETERMINE THE NORMAL VIEW FOR THE USER BASED ON THEIR ROLE
   // ====================================================================
-  
-  // 1. Admin Control View Gate
+  let NormalRoleView;
   if (currentUser?.role === 'admin') {
-    return <AdminPanel currentUser={currentUser} />;
+    NormalRoleView = <AdminPanel currentUser={currentUser} />;
+  } else if (currentUser?.role === 'viewer' || currentUser?.role === 'su') {
+    NormalRoleView = <WalletProfile currentUser={currentUser} />;
+  } else {
+    NormalRoleView = <Dashboard currentUser={currentUser} />;
   }
 
-  // 2. Wallet Viewer Limited View Gate
-  if (currentUser?.role === 'viewer') {
-    return <WalletProfile currentUser={currentUser} />;
-  }
+  // ====================================================================
+  // FINAL ROUTER (WITH SUPER ADMIN OVERRIDE)
+  // ====================================================================
+  return (
+    <div className="min-h-screen bg-slate-50 relative">
+      
+      {/* 👑 SUPER ADMIN FLOATING TOGGLE 👑 */}
+      {currentUser?.is_super_admin && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <button 
+            onClick={() => setAppView(appView === 'dashboard' ? 'super_admin' : 'dashboard')}
+            className="bg-slate-900 hover:bg-black text-white px-6 py-3 rounded-full shadow-2xl font-black text-sm tracking-wider border-2 border-slate-700 flex items-center gap-2 transition-transform hover:scale-105"
+          >
+            {appView === 'dashboard' ? '⚡ Switch to Master Console' : '👤 View as Standard User'}
+          </button>
+        </div>
+      )}
 
-  // 3. Default Member Hybrid View Gate (Shows both Workflow requests & Wallet tabs)
-  return <Dashboard currentUser={currentUser} />;
+      {/* ROUTER LOGIC */}
+      {appView === 'super_admin' && currentUser?.is_super_admin ? (
+        <SuperAdminLayout currentUser={currentUser} />
+      ) : (
+        NormalRoleView
+      )}
+    </div>
+  );
 }

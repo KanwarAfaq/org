@@ -11,8 +11,25 @@ export default function WalletProfile({ currentUser }) {
   const [lastGlobalUserAvatar, setLastGlobalUserAvatar] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+ useEffect(() => {
     fetchFinancialData();
+
+    // ⚡ REAL-TIME FINANCIAL LEDGER LISTENER
+    const walletChannel = supabase
+      .channel('wallet-global-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public' }, 
+        () => {
+          console.log('Live Financial Update Detected! Syncing HUD...');
+          fetchFinancialData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(walletChannel);
+    };
   }, [currentUser]);
 
   const fetchFinancialData = async () => {
