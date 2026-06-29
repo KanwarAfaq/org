@@ -5,6 +5,7 @@ import AdminPanel from './pages/AdminPanel';
 import SuperAdminLayout from './pages/SuperAdminLayout';
 import WalletProfile from './pages/WalletProfile'; 
 import Login from './pages/Login';
+import ReceiptForm from './pages/ReceiptForm';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -56,7 +57,6 @@ export default function App() {
       if (!profile) {
         console.log("Profile row missing inside public table. Executing fallback sync configuration...");
 
-        // Direct programmatic fallback creation if the PostgreSQL DB trigger latency causes a query gap
         const defaultProfile = {
           id: authUser.id,
           full_name: authUser.user_metadata?.full_name || authUser.email.split('@')[0],
@@ -80,7 +80,6 @@ export default function App() {
         }
       } else {
         setCurrentUser(profile);
-        // Automatically route Super Admins to the Master Console on login
         if (profile?.is_super_admin) setAppView('super_admin');
       }
     } catch (err) {
@@ -105,9 +104,15 @@ export default function App() {
     }
   };
 
-  if (loading) return <div className="p-8 text-center text-xs font-mono">Initializing gateways...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 space-y-4">
+        <div className="w-12 h-12 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin shadow-md"></div>
+        <div className="text-xs font-bold text-slate-500 font-mono tracking-widest uppercase animate-pulse">Initializing Secure Gateways...</div>
+      </div>
+    );
+  }
 
-  // Render the secure Update Password screen if the user arrived via a reset email link
   if (isResettingPassword) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -133,6 +138,12 @@ export default function App() {
   }
 
   if (!session) return <Login />;
+
+  // 🚨 NEW: URL Interceptor for the Receipts Page
+  // This seamlessly routes to the receipt form without needing react-router-dom!
+  if (window.location.pathname === '/receipts') {
+    return <ReceiptForm currentUser={currentUser} />;
+  }
 
   // ====================================================================
   // DETERMINE THE NORMAL VIEW FOR THE USER BASED ON THEIR ROLE
@@ -170,6 +181,7 @@ export default function App() {
       ) : (
         NormalRoleView
       )}
+      
     </div>
   );
 }

@@ -50,16 +50,28 @@ export default function CategoryManager() {
     else fetchCategories();
   };
 
+  // 🆕 NEW: Delete Category Function
+  const handleDeleteCategory = async (id, catName) => {
+    if (!window.confirm(`🚨 Are you sure you want to permanently delete "${catName}"?\n\nPast workflow records using this category will remain perfectly safe, but it will be erased from the system menu forever.`)) return;
+
+    const { error } = await supabase
+      .from('workflow_categories')
+      .delete()
+      .eq('id', id);
+
+    if (error) alert(`Failed to delete: ${error.message}`);
+    else fetchCategories();
+  };
+
   if (loading) return <div className="text-slate-500 animate-pulse">Loading core system categories...</div>;
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-6">
       <div className="border-b border-slate-100 pb-4">
         <h2 className="text-xl font-black text-slate-900">🗂️ Global Category Manager</h2>
-        <p className="text-sm text-slate-500">Add, edit, or disable the dropdown workflow request items for all users.</p>
+        <p className="text-sm text-slate-500">Add, edit, disable, or delete the dropdown workflow request items for all users.</p>
       </div>
 
-      {/* ADD NEW FORM */}
       <form onSubmit={handleAddCategory} className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col md:flex-row gap-3">
         <div className="flex-shrink-0">
           <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Emoji Icon</label>
@@ -76,7 +88,6 @@ export default function CategoryManager() {
         </div>
       </form>
 
-      {/* CATEGORY LIST */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
         {categories.map((cat) => (
           <div key={cat.id} className={`flex items-center justify-between p-4 border rounded-xl shadow-sm transition-all ${cat.is_active ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
@@ -87,9 +98,16 @@ export default function CategoryManager() {
                 <p className="text-[10px] font-mono text-slate-400">ID: {cat.id.split('-')[0]}</p>
               </div>
             </div>
-            <button onClick={() => handleToggleStatus(cat.id, cat.is_active)} className={`text-xs font-bold px-3 py-1.5 rounded-md ${cat.is_active ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}>
-              {cat.is_active ? 'Disable' : 'Enable'}
-            </button>
+            
+            {/* 🆕 NEW: Action Button Group */}
+            <div className="flex items-center gap-2">
+              <button onClick={() => handleToggleStatus(cat.id, cat.is_active)} className={`text-xs font-bold px-3 py-1.5 rounded-md ${cat.is_active ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}>
+                {cat.is_active ? 'Disable' : 'Enable'}
+              </button>
+              <button onClick={() => handleDeleteCategory(cat.id, cat.name)} className="text-xs font-bold px-3 py-1.5 rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
+                Delete
+              </button>
+            </div>
           </div>
         ))}
       </div>

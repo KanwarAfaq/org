@@ -4,46 +4,67 @@ import WalletProfile from './WalletProfile';
 
 export default function Dashboard({ currentUser }) {
   const [currentTab, setCurrentTab] = useState('workflow'); 
-  const [category, setCategory] = useState('');
+  const [dbCategories, setDbCategories] = useState([]);
+  
+  // Form State (Updated for multiple categories)
+  const [selectedCategories, setSelectedCategories] = useState([]);
   const [customCategory, setCustomCategory] = useState('');
   const [amount, setAmount] = useState('');
-  const [customAmount, setCustomAmount] = useState('');
   const [note, setNote] = useState('');
+  
+  // Verifier Selection State
   const [allUsers, setAllUsers] = useState([]);
   const [selectedTagUsers, setSelectedTagUsers] = useState([]);
+  const [verifierSearch, setVerifierSearch] = useState(''); 
   
+  // Data Logs State
   const [inboxPosts, setInboxPosts] = useState([]);
   const [outboxPosts, setOutboxPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reasonMap, setReasonMap] = useState({});
   const [editContentMap, setEditContentMap] = useState({});
 
- useEffect(() => {
+  useEffect(() => {
     if (!currentUser?.id) return;
     
     fetchUsers();
+    fetchActiveCategories();
     fetchDashboardData();
 
-    // ⚡ UPGRADED REAL-TIME DASHBOARD LISTENER
     const workflowChannel = supabase
       .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public' }, // REMOVED the 'table' restriction to listen to EVERYTHING
-        () => {
-          console.log('Real-time sync triggered: Global update intercepted.');
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
           fetchDashboardData(); 
-        }
-      )
-      .subscribe();
+      }).subscribe();
 
-    return () => {
-      supabase.removeChannel(workflowChannel);
-    };
+    return () => supabase.removeChannel(workflowChannel);
   }, [currentUser?.id]);
 
+  const fetchActiveCategories = async () => {
+    const { data } = await supabase.from('workflow_categories').select('*').eq('is_active', true).order('created_at', { ascending: true });
+    if (data) setDbCategories(data);
+  };
+// 🆕 NEW: Master Refresh Function
+  const handleRefreshAll = async () => {
+    setLoading(true);
+    
+    // Clear out the form so it feels like a fresh page
+    setSelectedCategories([]); 
+    setCustomCategory(''); 
+    setAmount(''); 
+    setNote(''); 
+    setSelectedTagUsers([]); 
+    setVerifierSearch('');
+
+    // Fetch ALL system data again
+    await Promise.all([
+      fetchActiveCategories(),
+      fetchUsers(),
+      fetchDashboardData() // This handles setting loading back to false
+    ]);
+  };
   const fetchUsers = async () => {
-    const { data } = await supabase.from('profiles').select('id, full_name, email').neq('id', currentUser.id);
+    const { data } = await supabase.from('profiles').select('id, full_name, email').neq('id', currentUser.id).order('full_name', { ascending: true });
     if (data) setAllUsers(data);
   };
 
@@ -51,14 +72,13 @@ export default function Dashboard({ currentUser }) {
     if (!currentUser?.id) return;
     setLoading(true);
     try {
-      const { data: allPosts, error: postsError } = await supabase.from('posts').select('*');
-      if (postsError) throw postsError;
+      const [allPostsRes, profilesRes] = await Promise.all([
+        supabase.from('posts').select('*'),
+        supabase.from('profiles').select('id, full_name')
+      ]);
 
-      const { data: profiles, error: profilesError } = await supabase.from('profiles').select('id, full_name');
-      if (profilesError) throw profilesError;
-
-      const safePosts = allPosts || [];
-      const safeProfiles = profiles || [];
+      const safePosts = allPostsRes.data || [];
+      const safeProfiles = profilesRes.data || [];
 
       let fullyMappedPosts = safePosts.map(p => {
         const authorProf = safeProfiles.find(prof => prof.id === p.author_id);
@@ -70,24 +90,11 @@ export default function Dashboard({ currentUser }) {
         };
       });
 
-      // 🛡️ DYNAMIC RLS BYPASS: Force group resolution on the client side
       fullyMappedPosts = fullyMappedPosts.map(post => {
-        const groupMatch = post.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/);
-        const groupId = groupMatch ? groupMatch[1] : null;
-
+        const groupId = post.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/)?.[1] || null;
         if (groupId && post.status === 'pending') {
-          const peerApproved = fullyMappedPosts.find(other => 
-            other.action_reason?.includes(groupId) && other.status === 'approved'
-          );
-
-          if (peerApproved) {
-            return {
-              ...post,
-              status: 'deactivated',
-              flag_color: 'slate',
-              action_reason: `Approved by peer: ${peerApproved.tagged?.full_name || 'System'} || GROUP_ID:${groupId}`
-            };
-          }
+          const peerApproved = fullyMappedPosts.find(other => other.action_reason?.includes(groupId) && other.status === 'approved');
+          if (peerApproved) return { ...post, status: 'deactivated', flag_color: 'slate', action_reason: `Approved by peer: ${peerApproved.tagged?.full_name || 'System'} || GROUP_ID:${groupId}` };
         }
         return post;
       });
@@ -97,24 +104,36 @@ export default function Dashboard({ currentUser }) {
       
       setInboxPosts([...inbox].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
       setOutboxPosts([...outbox].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
-      
     } catch (err) {
-      console.error("Dashboard database synchronization failure:", err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
+  // 🆕 NEW: Multi-Select Category Logic
+  const handleToggleCategory = (catName) => {
+    setSelectedCategories(prev => 
+      prev.includes(catName) ? prev.filter(c => c !== catName) : [...prev, catName]
+    );
+  };
+
   const handleCreatePost = async (e) => {
     e.preventDefault();
-    if (selectedTagUsers.length === 0) return alert('Please assign at least one verifier.');
+    if (selectedTagUsers.length === 0) return alert('Assign at least one verifier.');
     
-    const finalCategory = category === 'custom' ? customCategory : category;
-    const finalAmount = amount === 'custom' ? customAmount : amount;
-    if (!finalCategory || !finalAmount) return alert('Fill in all required fields.');
+    // Combine selected categories into a single string
+    let activeCats = selectedCategories.filter(c => c !== 'custom');
+    if (selectedCategories.includes('custom') && customCategory.trim()) {
+      activeCats.push(customCategory.trim());
+    }
 
+    if (activeCats.length === 0) return alert('Please select at least one category.');
+    if (!amount) return alert('Please enter an amount.');
+
+    const finalCategoryString = activeCats.join(' + ');
     const sharedGroupId = crypto.randomUUID();
-    let structuredContent = `[${finalCategory.toUpperCase()}] Request Processing - Amount: $${finalAmount}`;
+    let structuredContent = `[${finalCategoryString.toUpperCase()}] Request Processing - Amount: $${amount}`;
     if (note.trim()) structuredContent += ` || NOTE: ${note.trim()}`;
 
     try {
@@ -132,17 +151,18 @@ export default function Dashboard({ currentUser }) {
 
         await supabase.from('audit_logs').insert({
           id: crypto.randomUUID(), post_id: generatedPostId, action_taken: 'CREATED',
-          performed_by: currentUser.id, notes: `Created request group ${sharedGroupId}. Sent to verifier: ${verifierId}`,
+          performed_by: currentUser.id, notes: `Created request group ${sharedGroupId}. Assigned: ${verifierId}`,
           action_timestamp: new Date().toISOString()
         });
       });
 
       await Promise.all(submissionPromises);
-      alert(`Workflow request successfully broadcasted to ${selectedTagUsers.length} verifiers!`);
-      setCategory(''); setCustomCategory(''); setAmount(''); setCustomAmount(''); setNote(''); setSelectedTagUsers([]);
+      alert(`Broadcasted to ${selectedTagUsers.length} verifiers!`);
+      
+      // Reset Form
+      setSelectedCategories([]); setCustomCategory(''); setAmount(''); setNote(''); setSelectedTagUsers([]); setVerifierSearch('');
       fetchDashboardData();
     } catch (error) {
-      console.error(error);
       alert(`Submission failure: ${error.message}`);
     }
   };
@@ -151,23 +171,24 @@ export default function Dashboard({ currentUser }) {
     setSelectedTagUsers(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
   };
 
+  const filteredUsers = allUsers.filter(u => u.full_name.toLowerCase().includes(verifierSearch.toLowerCase()));
+
   const handleWorkflowAction = async (postId, status, flagColor) => {
     const customReason = reasonMap[postId] || '';
-    if ((status === 'disapproved' || status === 'edit_requested') && !customReason.trim()) return alert('Provide a reason for this action.');
+    if ((status === 'disapproved' || status === 'edit_requested') && !customReason.trim()) return alert('Provide a reason.');
 
     try {
       const { data: targetPost, error: fetchPostError } = await supabase.from('posts').select('*').eq('id', postId).maybeSingle();
       if (fetchPostError) throw fetchPostError;
 
-      const groupMatch = targetPost?.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/);
-      const groupId = groupMatch ? groupMatch[1] : null;
+      const groupId = targetPost?.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/)?.[1] || null;
 
       if (status === 'approved' && groupId) {
         const { data: groupPosts } = await supabase.from('posts').select('*');
         const alreadyApproved = (groupPosts || []).some(p => p.action_reason?.includes(groupId) && p.status === 'approved' && p.id !== postId);
         if (alreadyApproved) {
-          alert("This request group has already been approved by another verifier!");
-          await supabase.from('posts').update({ status: 'deactivated', flag_color: 'slate', action_reason: `System: Already approved by a peer verifier.`, updated_at: new Date().toISOString() }).eq('id', postId);
+          alert("Request group already approved by another verifier!");
+          await supabase.from('posts').update({ status: 'deactivated', flag_color: 'slate', action_reason: `System: Already approved.`, updated_at: new Date().toISOString()}).eq('id', postId);
           fetchDashboardData(); return;
         }
       }
@@ -178,10 +199,8 @@ export default function Dashboard({ currentUser }) {
 
       if (status === 'approved') {
         const amountMatch = targetPost?.content.match(/\$([0-9.,]+)/);
-        
         if (amountMatch && amountMatch[1]) {
           const extractedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
-          
           const { data: profile } = await supabase.from('profiles').select('total_amount_claimed').eq('id', currentUser.id).maybeSingle();
           const prevAmount = Number(profile?.total_amount_claimed || 0);
           const newAmount = prevAmount + extractedAmount;
@@ -189,20 +208,16 @@ export default function Dashboard({ currentUser }) {
           const { error: ledgerError } = await supabase.from('member_wallet_logs').insert({
             id: crypto.randomUUID(), member_id: currentUser.id, post_id: postId,
             prev_amount: prevAmount, delta_amount: extractedAmount, new_amount: newAmount,
-            notes: `Workflow Approved: ${targetPost?.content.split(' || ')[0]}`,
-            action_timestamp: new Date().toISOString()
+            notes: `Workflow Approved: ${targetPost?.content.split(' || ')[0]}`, action_timestamp: new Date().toISOString()
           });
 
           if (ledgerError) throw new Error(`Ledger Save Failed: ${ledgerError.message}`);
-
           await supabase.from('profiles').update({ total_amount_claimed: newAmount }).eq('id', currentUser.id);
-        } else {
-          throw new Error("Critical Data Error: Could not extract dollar amount from the request content.");
         }
         
         if (groupId) {
-          const { data: freshGroupLookup } = await supabase.from('posts').select('id, action_reason, status');
-          const pendingSiblings = (freshGroupLookup || []).filter(p => p.action_reason?.includes(groupId) && p.id !== postId && p.status === 'pending');
+          const { data: freshGroup } = await supabase.from('posts').select('id, action_reason, status');
+          const pendingSiblings = (freshGroup || []).filter(p => p.action_reason?.includes(groupId) && p.id !== postId && p.status === 'pending');
           if (pendingSiblings.length > 0) {
             await Promise.all(pendingSiblings.map(sibling => supabase.from('posts').update({
               status: 'deactivated', flag_color: 'slate', action_reason: `Approved by peer: ${currentUser.full_name} || GROUP_ID:${groupId}`, updated_at: new Date().toISOString()
@@ -213,13 +228,12 @@ export default function Dashboard({ currentUser }) {
 
       await supabase.from('audit_logs').insert({ 
         id: crypto.randomUUID(), post_id: postId, action_taken: status.toUpperCase(), performed_by: currentUser.id, 
-        notes: customReason || `Handled workflow state as ${status}.`, action_timestamp: new Date().toISOString()
+        notes: customReason || `Handled state as ${status}.`, action_timestamp: new Date().toISOString()
       });
 
       fetchDashboardData();
     } catch (err) {
-      console.error(err);
-      alert(`Ledger Transaction Failed: ${err.message}`);
+      alert(`Transaction Failed: ${err.message}`);
     }
   };
 
@@ -248,15 +262,6 @@ export default function Dashboard({ currentUser }) {
     if (color === 'red') return base + "bg-red-100 text-red-800";
     if (color === 'blue') return base + "bg-blue-100 text-blue-800";
     return base + "bg-slate-100 text-slate-600";
-  };
-
-  const getHistoryFeedback = (post) => {
-    const cleanReason = post.action_reason?.split(' || GROUP_ID')[0] || '';
-    if (post.status === 'approved') return `✅ You approved this request.`;
-    if (post.status === 'deactivated') return `ℹ️ ${cleanReason || 'Handled by another verifier.'}`;
-    if (post.status === 'disapproved') return `🚫 You denied this request. (${cleanReason})`;
-    if (post.status === 'edit_requested') return `🔄 You requested an edit. (${cleanReason})`;
-    return `📝 Marked as ${post.status}`;
   };
 
   const processedOutboxItems = useMemo(() => {
@@ -295,115 +300,180 @@ export default function Dashboard({ currentUser }) {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => setCurrentTab('workflow')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>📋 Workflow Requests</button>
-          <button type="button" onClick={() => setCurrentTab('history')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'history' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>📜 Workflow History</button>
-          <button type="button" onClick={() => setCurrentTab('wallet')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>🏦 Financial Wallet</button>
-        </div>
+       <div className="flex flex-wrap items-center gap-2">
+  <button type="button" onClick={() => setCurrentTab('workflow')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>📋 Workflow Requests</button>
+  <button type="button" onClick={() => setCurrentTab('wallet')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>🏦 Financial Wallet</button>
+  
+  {/* REMOVED THE ADMIN RESTRICTION - NOW VISIBLE TO ANYONE ON DASHBOARD */}
+  <button type="button" onClick={() => window.location.href = '/receipts'} className="px-4 py-2 text-xs font-bold rounded-lg transition-all bg-emerald-600 hover:bg-emerald-500 text-white shadow ml-4">
+    📸 Upload Receipt
+  </button>
+</div>
 
         <div className="flex items-center justify-end gap-2.5">
-          <button type="button" onClick={fetchDashboardData} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-2 rounded font-mono hover:bg-slate-700">REFRESH DATA</button>
+          
+        {/* 🆕 UPDATED: Animated Refresh Button points to handleRefreshAll */}
+          <button 
+            type="button" 
+            onClick={handleRefreshAll} 
+            disabled={loading}
+            className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-2 rounded font-mono hover:bg-slate-700 flex items-center gap-2 transition-colors disabled:opacity-50"
+          >
+            {loading ? <span className="animate-spin text-sm leading-none">⏳</span> : <span>🔄</span>}
+            REFRESH DATA
+          </button>
           <button type="button" onClick={async () => { if (window.confirm("Are you sure you want to sign out?")) await supabase.auth.signOut(); }} className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900">❌ SIGN OUT</button>
         </div>
       </div>
 
-      {currentTab === 'wallet' && <div className="animate-fadeIn"><WalletProfile currentUser={currentUser} /></div>}
-
-      {/* NEW HISTORY TAB */}
-      {currentTab === 'history' && (
-        <div className="animate-fadeIn space-y-6">
-          <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-            <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">📜 VERIFIER HISTORY ARCHIVE</h3>
-            <p className="text-sm text-slate-500 mb-6">A complete ledger of workflows you have engaged with or been tagged in.</p>
-            
-            {inboxPosts.filter(p => p.status !== 'pending').length === 0 ? (
-              <p className="text-sm text-slate-400 bg-slate-50 border rounded-xl p-6 text-center shadow-inner italic">No historical records found.</p>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {inboxPosts.filter(p => p.status !== 'pending').map(post => (
-                  <div key={post.id} className={`bg-white border rounded-xl p-5 shadow-sm space-y-4 ${post.status === 'deactivated' ? 'opacity-80' : ''}`}>
-                    <div className="flex justify-between items-start">
-                      <p className="text-sm font-bold text-slate-900">From: <span className="font-normal text-slate-600">{post.author?.full_name}</span></p>
-                      <span className={getFlagBadge(post.status, post.flag_color)}>{post.status}</span>
-                    </div>
-                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">{renderPostContentWithNote(post.content)}</div>
-                    
-                    <div className="bg-slate-100 text-slate-600 font-mono text-[11px] p-2.5 rounded border border-slate-200">
-                      {getHistoryFeedback(post)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {currentTab === 'workflow' && (
+      {currentTab === 'wallet' ? (
+        <div className="animate-fadeIn"><WalletProfile currentUser={currentUser} /></div>
+      ) : (
         <div className="space-y-8 animate-fadeIn">
-          {/* SUBMISSION FORM */}
+          {/* 📊 NEW SUBMISSION FORM */}
           <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
             <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">📊 New Workflow Submission</h3>
-            <form onSubmit={handleCreatePost} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={handleCreatePost} className="space-y-6">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* 🆕 NEW: Multi-Select Category Chips */}
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Request Item</label>
-                  <div className="flex gap-2">
-                    <select value={category} onChange={(e) => setCategory(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
-                      <option value="">-- Choose Category --</option>
-                      <option value="Inventory Restock">📦 Inventory Restock</option>
-                      <option value="Expense Reimbursement">💰 Expense Reimbursement</option>
-                      <option value="Office Equipment purchase">💻 Office Equipment Purchase</option>
-                      <option value="custom">✍️ Add Custom...</option>
-                    </select>
-                    {category === 'custom' && <input type="text" placeholder="Category Name" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />}
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Request Categories (Select Multiple)</label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {dbCategories.map(cat => (
+                      <button 
+                        key={cat.id} 
+                        type="button" 
+                        onClick={() => handleToggleCategory(cat.name)}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-md border transition-colors ${selectedCategories.includes(cat.name) ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}
+                      >
+                        {cat.icon} {cat.name}
+                      </button>
+                    ))}
+                    <button 
+                      type="button" 
+                      onClick={() => handleToggleCategory('custom')}
+                      className={`text-xs font-bold px-3 py-1.5 rounded-md border transition-colors ${selectedCategories.includes('custom') ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}
+                    >
+                      ✍️ Custom...
+                    </button>
                   </div>
+                  
+                  {selectedCategories.includes('custom') && (
+                    <input 
+                      type="text" 
+                      placeholder="Type custom category name..." 
+                      value={customCategory} 
+                      onChange={(e) => setCustomCategory(e.target.value)} 
+                      required 
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 animate-fadeIn mt-2" 
+                    />
+                  )}
                 </div>
+
+                {/* Amount Selection */}
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Amount ($)</label>
-                  <div className="flex gap-2">
-                    <select value={amount} onChange={(e) => setAmount(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
-                      <option value="">-- Choose Amount --</option>
-                      <option value="100">$100</option>
-                      <option value="500">$500</option>
-                      <option value="1000">$1,000</option>
-                      <option value="custom">✍️ Custom Type...</option>
-                    </select>
-                    {amount === 'custom' && <input type="text" placeholder="Exact Amount" value={customAmount} onChange={(e) => setCustomAmount(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />}
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Amount ($)</label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {[100, 500, 1000, 5000, 10000].map(val => (
+                      <button 
+                        key={val} 
+                        type="button" 
+                        onClick={() => setAmount(val.toString())}
+                        className={`text-xs font-bold px-2.5 py-1 rounded-md border transition-colors ${amount === val.toString() ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}
+                      >
+                        ${val.toLocaleString()}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                    <input 
+                      type="number" 
+                      min="1"
+                      placeholder="Type custom amount..." 
+                      value={amount} 
+                      onChange={(e) => setAmount(e.target.value)} 
+                      required 
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono" 
+                    />
                   </div>
                 </div>
               </div>
+
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Special Note (Optional)</label>
-                <input type="text" placeholder="Context..." value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Special Note (Optional)</label>
+                <input type="text" placeholder="Add context for the verifier..." value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500" />
               </div>
 
-              <div className="pt-2">
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Assign Verifiers (Select all that apply):</label>
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-h-40 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 shadow-inner">
-                  {allUsers.map((user) => (
-                    <label key={user.id} className="flex items-center space-x-2.5 bg-white p-2 border rounded-lg cursor-pointer select-none shadow-sm hover:bg-slate-50">
-                      <input type="checkbox" checked={selectedTagUsers.includes(user.id)} onChange={() => handleToggleVerifierCheckbox(user.id)} className="h-4 w-4 rounded text-blue-600 border-slate-300 cursor-pointer" />
-                      <div className="text-left">
-                        <p className="text-xs font-bold text-slate-800">{user.full_name}</p>
-                        <p className="text-[9px] text-slate-400 truncate max-w-[150px]">{user.email || 'No email saved'}</p>
-                      </div>
-                    </label>
-                  ))}
+              <div className="pt-2 border-t border-slate-100">
+                <label className="block text-sm font-semibold text-slate-700 mb-3">Assign Verifiers</label>
+                <div className="flex flex-wrap gap-2 mb-3 min-h-[32px]">
+                  {selectedTagUsers.length === 0 ? (
+                    <span className="text-xs text-slate-400 italic flex items-center">No verifiers assigned yet...</span>
+                  ) : (
+                    selectedTagUsers.map(id => {
+                      const user = allUsers.find(u => u.id === id);
+                      return (
+                        <span key={id} className="bg-blue-100 border border-blue-200 text-blue-800 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-2 shadow-sm">
+                          {user?.full_name || 'Unknown'} 
+                          <button type="button" onClick={() => handleToggleVerifierCheckbox(id)} className="text-blue-500 hover:text-red-500 hover:bg-white rounded-full h-4 w-4 flex items-center justify-center leading-none">×</button>
+                        </span>
+                      );
+                    })
+                  )}
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1.5">Selected: <span className="text-blue-600 font-bold font-mono">{selectedTagUsers.length}</span> verifier(s)</p>
+
+                <div className="relative mb-2">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+                  <input type="text" placeholder="Search directory by name..." value={verifierSearch} onChange={(e) => setVerifierSearch(e.target.value)} className="w-full bg-white border border-slate-300 rounded-t-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" />
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-b-lg p-2 max-h-48 overflow-y-auto shadow-inner">
+                  {filteredUsers.length === 0 ? (
+                    <p className="text-xs text-slate-400 text-center py-4">No employees match your search.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                      {filteredUsers.map((user) => (
+                        <label key={user.id} className={`flex items-center space-x-3 p-2.5 border rounded-lg cursor-pointer transition-all ${selectedTagUsers.includes(user.id) ? 'bg-blue-50 border-blue-300 shadow-sm' : 'bg-white border-slate-200 hover:border-blue-400 shadow-sm'}`}>
+                          <input type="checkbox" checked={selectedTagUsers.includes(user.id)} onChange={() => handleToggleVerifierCheckbox(user.id)} className="h-4 w-4 rounded text-blue-600 border-slate-300 cursor-pointer focus:ring-blue-500" />
+                          <div className="text-left min-w-0">
+                            <p className="text-xs font-bold text-slate-800 truncate">{user.full_name}</p>
+                            <p className="text-[10px] text-slate-400 truncate">{user.email || 'No email saved'}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="flex justify-end pt-4 border-t border-slate-100">
-                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-md">🚀 Submit Request</button>
+              <div className="flex justify-end pt-4">
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-black text-sm px-8 py-3 rounded-xl shadow-md transition-transform hover:scale-[1.02]">
+                  🚀 Broadcast Request
+                </button>
               </div>
             </form>
           </div>
 
-          {/* GRID COLUMNS */}
-          {loading ? <div className="text-center text-slate-500">Syncing active workflows...</div> : (
+          {/* GRID COLUMNS (Inbox / Outbox) */}
+          {loading ? (
+            /* 🆕 NEW: Skeleton Loader for Dashboard Grids */
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* INBOX - NOW STRICTLY PENDING ITEMS ONLY */}
+              <div className="space-y-4">
+                <div className="h-6 w-1/2 bg-slate-200 rounded animate-pulse"></div>
+                {[1,2,3].map(i => <div key={i} className="h-32 bg-slate-200 rounded-xl animate-pulse"></div>)}
+              </div>
+              <div className="space-y-4">
+                <div className="h-6 w-1/2 bg-slate-200 rounded animate-pulse"></div>
+                {[1,2,3].map(i => <div key={i} className="h-28 bg-slate-200 rounded-xl animate-pulse"></div>)}
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* INBOX */}
               <div className="space-y-4">
                 <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📥 ACTION REQUIRED BY YOU</h3>
                 {inboxPosts.filter(p => p.status === 'pending').length === 0 ? (
