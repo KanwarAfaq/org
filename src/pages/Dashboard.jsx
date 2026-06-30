@@ -301,14 +301,19 @@ export default function Dashboard({ currentUser }) {
         </div>
 
        <div className="flex flex-wrap items-center gap-2">
-  <button type="button" onClick={() => setCurrentTab('workflow')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>📋 Workflow Requests</button>
-  <button type="button" onClick={() => setCurrentTab('wallet')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>🏦 Financial Wallet</button>
-  
-  {/* REMOVED THE ADMIN RESTRICTION - NOW VISIBLE TO ANYONE ON DASHBOARD */}
-  <button type="button" onClick={() => window.location.href = '/receipts'} className="px-4 py-2 text-xs font-bold rounded-lg transition-all bg-emerald-600 hover:bg-emerald-500 text-white shadow ml-4">
-    📸 Upload Receipt
-  </button>
-</div>
+          <button type="button" onClick={() => setCurrentTab('workflow')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>📋 Workflows</button>
+          <button type="button" onClick={() => setCurrentTab('wallet')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>🏦 Wallet</button>
+          
+          {/* NOW AVAILABLE TO EVERYONE! */}
+          <div className="flex border-l border-slate-700 pl-2 ml-2 gap-2">
+            <button type="button" onClick={() => window.location.href = '/receipts'} className="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow">
+              📸 Upload Receipt
+            </button>
+            <button type="button" onClick={() => window.location.href = '/view-receipts'} className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow">
+              🗄️ View Vault
+            </button>
+          </div>
+        </div>
 
         <div className="flex items-center justify-end gap-2.5">
           

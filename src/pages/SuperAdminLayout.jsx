@@ -4,7 +4,7 @@ import CategoryManager from '../components/CategoryManager';
 import MasterWorkflowLedger from '../components/MasterWorkflowLedger';
 import MasterFinancialLedger from '../components/MasterFinancialLedger';
 import ReportGenerator from '../components/ReportGenerator';
-
+import ReceiptViewer from './ReceiptViewer';
 export default function SuperAdminLayout({ currentUser }) {
   const [activeView, setActiveView] = useState('categories');
 
@@ -52,8 +52,12 @@ export default function SuperAdminLayout({ currentUser }) {
           <button onClick={() => setActiveView('reports')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeView === 'reports' ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-800 text-slate-400'}`}>
             🖨️ PDF / CSV Reports
           </button>
+           <button onClick={() => window.location.href = '/view-receipts'} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all hover:bg-emerald-900/40 text-emerald-400 border border-emerald-900/50">
+              🗄️ Global Receipt Vault
+            </button>
         </div>
-
+           
+          
         <div className="p-4 border-t border-slate-800">
           <button onClick={handleSignOut} className="w-full bg-red-950/30 text-red-400 hover:bg-red-900/50 hover:text-red-300 py-2.5 rounded-lg text-xs font-bold transition-colors">
             Exit System

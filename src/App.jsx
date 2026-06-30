@@ -6,7 +6,7 @@ import SuperAdminLayout from './pages/SuperAdminLayout';
 import WalletProfile from './pages/WalletProfile'; 
 import Login from './pages/Login';
 import ReceiptForm from './pages/ReceiptForm';
-
+import ReceiptViewer from './pages/ReceiptViewer';
 export default function App() {
   const [session, setSession] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
@@ -141,10 +141,12 @@ export default function App() {
 
   // 🚨 NEW: URL Interceptor for the Receipts Page
   // This seamlessly routes to the receipt form without needing react-router-dom!
-  if (window.location.pathname === '/receipts') {
+if (window.location.pathname === '/receipts') {
     return <ReceiptForm currentUser={currentUser} />;
   }
-
+  if (window.location.pathname === '/view-receipts') {
+    return <ReceiptViewer currentUser={currentUser} />;
+  }
   // ====================================================================
   // DETERMINE THE NORMAL VIEW FOR THE USER BASED ON THEIR ROLE
   // ====================================================================
