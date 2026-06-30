@@ -15,8 +15,6 @@ export default function App() {
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   
-  // 🚨 THE NEW MASTER ROUTER STATE
-  // Options: 'home', 'super_admin', 'receipt_form', 'receipt_vault'
   const [activePage, setActivePage] = useState('home'); 
 
   useEffect(() => {
@@ -93,31 +91,37 @@ export default function App() {
 
   if (!session) return <Login />;
 
-  // 🚨 THE NEW STATE ROUTER (No URLs needed!)
+  // ====================================================================
+  // 🧭 MASTER ROUTER LOGIC (NO EARLY RETURNS)
+  // ====================================================================
+  let CurrentScreen;
+
   if (activePage === 'receipt_form') {
-    return <ReceiptForm currentUser={currentUser} setActivePage={setActivePage} />;
-  }
-  if (activePage === 'receipt_vault') {
-    return <ReceiptViewer currentUser={currentUser} setActivePage={setActivePage} />;
-  }
-  if (activePage === 'super_admin' && currentUser?.is_super_admin) {
-    return <SuperAdminLayout currentUser={currentUser} setActivePage={setActivePage} />;
-  }
-
-  // STANDARD HOME VIEWS
-  let NormalRoleView;
-  if (currentUser?.role === 'admin') {
-    NormalRoleView = <AdminPanel currentUser={currentUser} setActivePage={setActivePage} />;
-  } else if (currentUser?.role === 'viewer' || currentUser?.role === 'su') {
-    NormalRoleView = <WalletProfile currentUser={currentUser} setActivePage={setActivePage} />;
+    CurrentScreen = <ReceiptForm currentUser={currentUser} setActivePage={setActivePage} />;
+  } else if (activePage === 'receipt_vault') {
+    CurrentScreen = <ReceiptViewer currentUser={currentUser} setActivePage={setActivePage} />;
+  } else if (activePage === 'super_admin' && currentUser?.is_super_admin) {
+    CurrentScreen = <SuperAdminLayout currentUser={currentUser} setActivePage={setActivePage} />;
   } else {
-    NormalRoleView = <Dashboard currentUser={currentUser} setActivePage={setActivePage} />;
+    // STANDARD HOME VIEWS
+    if (currentUser?.role === 'admin') {
+      CurrentScreen = <AdminPanel currentUser={currentUser} setActivePage={setActivePage} />;
+    } else if (currentUser?.role === 'viewer' || currentUser?.role === 'su') {
+      CurrentScreen = <WalletProfile currentUser={currentUser} setActivePage={setActivePage} />;
+    } else {
+      CurrentScreen = <Dashboard currentUser={currentUser} setActivePage={setActivePage} />;
+    }
   }
 
+  // ====================================================================
+  // 🎨 FINAL RENDER (GUARANTEES BUTTON ALWAYS SHOWS)
+  // ====================================================================
   return (
     <div className="min-h-screen bg-slate-50 relative">
+      
+      {/* 👑 SUPER ADMIN FLOATING TOGGLE - High Z-Index ensures it sits above sidebars */}
       {currentUser?.is_super_admin && (
-        <div className="fixed bottom-6 right-6 z-50">
+        <div className="fixed bottom-6 right-6 z-[9999]">
           <button 
             onClick={() => setActivePage(activePage === 'super_admin' ? 'home' : 'super_admin')}
             className="bg-slate-900 hover:bg-black text-white px-6 py-3 rounded-full shadow-2xl font-black text-sm tracking-wider border-2 border-slate-700 flex items-center gap-2 transition-transform hover:scale-105"
@@ -126,7 +130,10 @@ export default function App() {
           </button>
         </div>
       )}
-      {NormalRoleView}
+
+      {/* Render whatever screen was decided in the routing logic above */}
+      {CurrentScreen}
+      
     </div>
   );
 }
