@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function ReceiptViewer({ currentUser }) {
+export default function ReceiptViewer({ currentUser, setActivePage }) {
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -97,9 +97,11 @@ export default function ReceiptViewer({ currentUser }) {
             <h2 className="text-2xl font-black flex items-center gap-2">🗄️ Receipt Vault</h2>
             <p className="text-sm text-slate-400">{isAdmin ? 'Global Company Ledger' : 'Your Personal Uploads'}</p>
           </div>
-          <div className="flex gap-3">
-            <button onClick={() => window.location.href = '/receipts'} className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-transform hover:scale-105">📸 Upload New</button>
-            <button onClick={() => window.location.href = '/'} className="bg-slate-800 border border-slate-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-700 shadow-sm transition-colors">Back to Home</button>
+          
+           <div className="flex gap-3">
+            <button onClick={() => setActivePage('receipt_form')} className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-transform hover:scale-105">📸 Upload New</button>
+            <button onClick={() => setActivePage('home')} className="bg-slate-800 border border-slate-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-700 shadow-sm transition-colors">Back to Home</button>
+          
           </div>
         </div>
 
@@ -224,7 +226,7 @@ export default function ReceiptViewer({ currentUser }) {
               <div key={receipt.id} className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden hover:shadow-lg transition-all group">
                 
                 <a href={receipt.file_url} target="_blank" rel="noreferrer" className="block relative h-48 overflow-hidden bg-slate-100">
-                  <img src={receipt.file_url} alt="Receipt" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                  <img src={receipt.file_url} referrerPolicy="no-referrer" alt="Receipt" className="w-full h-full object-cover..." />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                     <span className="opacity-0 group-hover:opacity-100 bg-white text-slate-900 text-xs font-bold px-3 py-1.5 rounded-lg shadow-xl transition-opacity">
                       🔍 Enlarge

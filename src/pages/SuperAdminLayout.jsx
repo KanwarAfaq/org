@@ -4,8 +4,8 @@ import CategoryManager from '../components/CategoryManager';
 import MasterWorkflowLedger from '../components/MasterWorkflowLedger';
 import MasterFinancialLedger from '../components/MasterFinancialLedger';
 import ReportGenerator from '../components/ReportGenerator';
-import ReceiptViewer from './ReceiptViewer';
-export default function SuperAdminLayout({ currentUser }) {
+
+export default function SuperAdminLayout({ currentUser, setActivePage }) {
   const [activeView, setActiveView] = useState('categories');
 
   if (!currentUser?.is_super_admin) {
@@ -14,7 +14,8 @@ export default function SuperAdminLayout({ currentUser }) {
         <div className="bg-white border border-red-200 p-8 rounded-2xl shadow-xl max-w-md text-center">
           <h2 className="text-2xl font-black text-slate-900 mb-2">🛑 Access Denied</h2>
           <p className="text-slate-500 mb-6">You do not have Super Admin clearance to view this console.</p>
-          <button onClick={() => window.location.reload()} className="bg-slate-900 text-white font-bold px-6 py-2 rounded-lg">Return to Dashboard</button>
+          {/* ⚙️ FIXED: This button now correctly sends unauthorized users back HOME */}
+          <button onClick={() => setActivePage('home')} className="bg-slate-900 text-white font-bold px-6 py-2 rounded-lg">Return to Dashboard</button>
         </div>
       </div>
     );
@@ -52,12 +53,13 @@ export default function SuperAdminLayout({ currentUser }) {
           <button onClick={() => setActiveView('reports')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeView === 'reports' ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-800 text-slate-400'}`}>
             🖨️ PDF / CSV Reports
           </button>
-           <button onClick={() => window.location.href = '/view-receipts'} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all hover:bg-emerald-900/40 text-emerald-400 border border-emerald-900/50">
-              🗄️ Global Receipt Vault
-            </button>
+          
+          {/* ⚙️ FIXED: The Vault button correctly belongs here in the sidebar! */}
+          <button onClick={() => setActivePage('receipt_vault')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all hover:bg-emerald-900/40 text-emerald-400 border border-emerald-900/50 mt-4">
+            🗄️ Global Receipt Vault
+          </button>
         </div>
            
-          
         <div className="p-4 border-t border-slate-800">
           <button onClick={handleSignOut} className="w-full bg-red-950/30 text-red-400 hover:bg-red-900/50 hover:text-red-300 py-2.5 rounded-lg text-xs font-bold transition-colors">
             Exit System
@@ -81,7 +83,8 @@ export default function SuperAdminLayout({ currentUser }) {
               <p className="text-xs font-bold text-slate-900 leading-tight">{currentUser.full_name}</p>
               <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Super Admin Active</p>
             </div>
-            <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg'} className="w-9 h-9 rounded-full border-2 border-blue-500 shadow-sm" alt="Admin" />
+            {/* Added referrerPolicy to stop the Facebook browser tracking warning */}
+            <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg'} referrerPolicy="no-referrer" className="w-9 h-9 rounded-full border-2 border-blue-500 shadow-sm" alt="Admin" />
           </div>
         </header>
 

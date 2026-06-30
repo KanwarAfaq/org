@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import WalletProfile from './WalletProfile'; 
 
-export default function Dashboard({ currentUser }) {
+export default function Dashboard({ currentUser, setActivePage }) {
   const [currentTab, setCurrentTab] = useState('workflow'); 
   const [dbCategories, setDbCategories] = useState([]);
   
@@ -293,7 +293,7 @@ export default function Dashboard({ currentUser }) {
       {/* HEADER BAR */}
       <div className="bg-slate-900 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 text-white">
         <div className="flex items-center gap-3 bg-slate-800/60 p-2 rounded-xl border border-slate-700/50">
-          <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg'} className="w-10 h-10 rounded-full object-cover border-2 border-blue-500 bg-slate-700 shrink-0" alt="" />
+          <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg'} referrerPolicy="no-referrer" className="w-10 h-10 rounded-full..." alt="" />
           <div className="text-left leading-tight min-w-0">
             <p className="text-xs font-black text-slate-100 truncate">{currentUser?.full_name || 'System Member'}</p>
             <p className="text-[10px] font-medium text-slate-400 truncate mt-0.5">{currentUser?.email || 'Active verified session'}</p>
@@ -305,11 +305,11 @@ export default function Dashboard({ currentUser }) {
           <button type="button" onClick={() => setCurrentTab('wallet')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>🏦 Wallet</button>
           
           {/* NOW AVAILABLE TO EVERYONE! */}
-          <div className="flex border-l border-slate-700 pl-2 ml-2 gap-2">
-            <button type="button" onClick={() => window.location.href = '/receipts'} className="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow">
+         <div className="flex border-l border-slate-700 pl-2 ml-2 gap-2">
+            <button type="button" onClick={() => setActivePage('receipt_form')} className="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow">
               📸 Upload Receipt
             </button>
-            <button type="button" onClick={() => window.location.href = '/view-receipts'} className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow">
+            <button type="button" onClick={() => setActivePage('receipt_vault')} className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow">
               🗄️ View Vault
             </button>
           </div>

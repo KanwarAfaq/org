@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function ReceiptForm({ currentUser }) {
+export default function ReceiptForm({ currentUser, setActivePage }) {
   const CLOUD_NAME = "dfmi4udfs"; 
   const UPLOAD_PRESET = "org_receipt"; 
 
@@ -57,7 +57,7 @@ export default function ReceiptForm({ currentUser }) {
 
       if (dbError) throw dbError;
       alert("Receipt successfully uploaded!");
-      window.location.href = '/view-receipts'; // Routes to the new viewer page!
+     setActivePage('receipt_vault'); // Routes to the new viewer page!
 
     } catch (error) {
       alert(`Upload Error: ${error.message}`);
@@ -75,7 +75,7 @@ export default function ReceiptForm({ currentUser }) {
             <h2 className="text-xl font-black">📸 Upload Receipt</h2>
             <p className="text-sm text-slate-400">Submitting as: {currentUser.full_name}</p>
           </div>
-          <button onClick={() => window.location.href = '/'} className="text-slate-400 hover:text-white font-bold text-sm bg-slate-800 px-3 py-1.5 rounded-lg">Cancel</button>
+         <button onClick={() => setActivePage('home')} className="text-slate-400 hover:text-white font-bold text-sm bg-slate-800 px-3 py-1.5 rounded-lg transition-colors">Cancel</button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">

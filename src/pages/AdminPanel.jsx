@@ -4,7 +4,7 @@ import TreasuryManager from '../components/TreasuryManager';
 import TransactionHistory from '../components/TransactionHistory';
 import StaffDirectory from '../components/StaffDirectory';
 
-export default function AdminPanel({ currentUser }) {
+export default function AdminPanel({ currentUser, setActivePage }) {
   const [allPosts, setAllPosts] = useState([]);
   const [allProfiles, setAllProfiles] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
@@ -148,20 +148,8 @@ export default function AdminPanel({ currentUser }) {
           <button type="button" onClick={() => setAdminSubView('dashboard')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${adminSubView === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>💰 Treasury Dashboard</button>
           <button type="button" onClick={() => setAdminSubView('history')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${adminSubView === 'history' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}> Master History Table</button>
           <button type="button" onClick={() => setAdminSubView('directory')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${adminSubView === 'directory' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>👥 Staff Directory</button>
-        <button 
-      type="button" 
-      onClick={() => window.location.href = '/receipts'} 
-      className="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow"
-    >
-      📸 Upload
-    </button>
-    <button 
-      type="button" 
-      onClick={() => window.location.href = '/view-receipts'} 
-      className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow"
-    >
-      🗄️ View Vault
-    </button>
+       <button onClick={() => setActivePage('receipt_form')} className="...">📸 Upload</button>
+    <button onClick={() => setActivePage('receipt_vault')} className="...">🗄️ View Vault</button>
         </div>
         <button type="button" onClick={fetchAdminData} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-1 rounded font-mono shadow-inner hover:bg-slate-700">REFRESH DATA</button>
       </div>
