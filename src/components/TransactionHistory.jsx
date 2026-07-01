@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
+import toast from 'react-hot-toast';
 
 export default function TransactionHistory({
   allPosts = [],
@@ -70,12 +71,12 @@ export default function TransactionHistory({
     const originalContent = String(post.content || '').trim();
 
     if (!nextContent) {
-      alert('Content cannot be left blank.');
+      toast.error('Content cannot be left blank.');
       return;
     }
 
     if (nextContent === originalContent) {
-      alert('No changes detected. Please edit the content before saving.');
+      toast.error('No changes detected. Please edit the content before saving.');
       return;
     }
 
@@ -110,10 +111,10 @@ export default function TransactionHistory({
       setEditedPostContent('');
       await safeRefresh();
 
-      alert('Transaction entry content updated successfully.');
+      toast.success('Transaction entry content updated successfully.');
     } catch (err) {
       console.error('Save edited post error:', err);
-      alert(`Update failed: ${err.message}`);
+      toast.error(`Update failed: ${err.message}`);
     } finally {
       setProcessingPostId(null);
     }
@@ -171,7 +172,7 @@ export default function TransactionHistory({
 
   const handleDeactivatePost = async (post) => {
     if (post.status === 'deactivated') {
-      alert('This transaction is already deactivated.');
+      toast.error('This transaction is already deactivated.');
       return;
     }
 
@@ -223,16 +224,16 @@ export default function TransactionHistory({
 
       await safeRefresh();
 
-      alert('Transaction deactivated successfully.');
+      toast.success('Transaction deactivated successfully.');
     } catch (err) {
       console.error('Deactivate post error:', err);
-      alert(`Deactivation failed: ${err.message}`);
+      toast.error(`Deactivation failed: ${err.message}`);
     } finally {
       setProcessingPostId(null);
     }
   };
 
- const handleAdminOverride = async (postId, newStatus, customReason = '') => {
+  const handleAdminOverride = async (postId, newStatus, customReason = '') => {
     if (!window.confirm(`Are you sure you want to force change this to ${newStatus.toUpperCase()}?`)) return;
 
     try {
@@ -288,7 +289,7 @@ export default function TransactionHistory({
       }
 
       // ====================================================================
-      // 🚫 GROUP VOIDING PROTOCOL (Kill C's row permanently)
+      // 🚫 GROUP VOIDING PROTOCOL (Kill sibling rows permanently)
       // ====================================================================
       if (groupId) {
         const { data: groupPosts } = await supabase.from('posts').select('id, action_reason').neq('id', postId);
@@ -325,14 +326,13 @@ export default function TransactionHistory({
         action_timestamp: new Date().toISOString()
       });
 
-      alert('Admin override successful. Financials and sibling rows adjusted.');
+      toast.success('Admin override successful. Financials and sibling rows adjusted.');
       
-      // Call the prop function to refresh the Admin Panel UI
       if (typeof fetchAdminData === 'function') fetchAdminData();
 
     } catch (err) {
       console.error(err);
-      alert(`Admin Override Failed: ${err.message}`);
+      toast.error(`Admin Override Failed: ${err.message}`);
     }
   };
 
@@ -505,18 +505,20 @@ export default function TransactionHistory({
 
                     {post.status === 'pending' && (
                       <div className="flex gap-1 justify-end mt-1.5">
+                        {/* 🐛 FIX: Passing post.id instead of the entire post object */}
                         <button
                           type="button"
-                          onClick={() => handleAdminOverride(post, 'approved', 'green')}
+                          onClick={() => handleAdminOverride(post.id, 'approved', 'Admin Forced Approval')}
                           className="bg-green-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded shadow"
                           disabled={processingPostId === post.id}
                         >
                           Pass
                         </button>
 
+                        {/* 🐛 FIX: Passing post.id instead of the entire post object */}
                         <button
                           type="button"
-                          onClick={() => handleAdminOverride(post, 'disapproved', 'red')}
+                          onClick={() => handleAdminOverride(post.id, 'disapproved', 'Admin Forced Denial')}
                           className="bg-red-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded shadow"
                           disabled={processingPostId === post.id}
                         >

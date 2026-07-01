@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
+import toast from 'react-hot-toast';
 
 export default function WalletProfile({ currentUser }) {
   const [personalLedger, setPersonalLedger] = useState([]);
@@ -9,12 +10,23 @@ export default function WalletProfile({ currentUser }) {
   const [lastGlobalUpdate, setLastGlobalUpdate] = useState(null);
   const [lastGlobalUser, setLastGlobalUser] = useState(null);
   const [lastGlobalUserAvatar, setLastGlobalUserAvatar] = useState(null);
+  
+  // 🛡️ HUD specific states (Prevents HUD from breaking on page 2+)
+  const [latestUserTx, setLatestUserTx] = useState(null); 
   const [loading, setLoading] = useState(true);
 
- useEffect(() => {
-    fetchFinancialData();
+  // 📄 Pagination States
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const ITEMS_PER_PAGE = 10;
 
-    // ⚡ REAL-TIME FINANCIAL LEDGER LISTENER
+  // 1. Fetch data when page changes or user loads
+  useEffect(() => {
+    fetchFinancialData();
+  }, [page, currentUser?.id]);
+
+  // 2. Setup Real-Time Listener (Runs exactly once)
+  useEffect(() => {
     const walletChannel = supabase
       .channel('wallet-global-changes')
       .on(
@@ -30,25 +42,37 @@ export default function WalletProfile({ currentUser }) {
     return () => {
       supabase.removeChannel(walletChannel);
     };
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   const fetchFinancialData = async () => {
     if (!currentUser?.id) return;
     setLoading(true);
 
     try {
-      const [treasuryLogsResult, profilesResult, allWalletLogsResult] = await Promise.all([
+      const from = (page - 1) * ITEMS_PER_PAGE;
+      const to = from + ITEMS_PER_PAGE - 1;
+
+      // 🧠 ENTERPRISE SPLIT-FETCH: HUD stats vs. Paginated Table
+      const [
+        treasuryLogsResult, 
+        profilesResult, 
+        latestGlobalRes, 
+        latestPersonalRes, 
+        paginatedPersonalRes
+      ] = await Promise.all([
         supabase.from('audit_logs').select('*').eq('action_taken', 'ADMIN_TREASURY_ADJUST'),
         supabase.from('profiles').select('id, full_name, avatar_url, total_amount_claimed'),
-        // Read directly from the new mathematical ledger
-        supabase.from('member_wallet_logs').select('*').order('action_timestamp', { ascending: false }) 
+        supabase.from('member_wallet_logs').select('*').order('action_timestamp', { ascending: false }).limit(1), // Latest Global
+        supabase.from('member_wallet_logs').select('*').eq('member_id', currentUser.id).order('action_timestamp', { ascending: false }).limit(1), // Latest Personal
+        supabase.from('member_wallet_logs').select('*', { count: 'exact' }).eq('member_id', currentUser.id).order('action_timestamp', { ascending: false }).range(from, to) // Paginated History
       ]);
 
       const safeLogs = treasuryLogsResult.data || [];
       const safeProfiles = profilesResult.data || [];
-      const allWalletLogs = allWalletLogsResult.data || [];
 
+      // ============================================
       // CARD 1: TOTAL ADDED COMPANY FUNDS
+      // ============================================
       const chronologicalLogs = [...safeLogs].sort((a, b) => new Date(a.action_timestamp || 0) - new Date(b.action_timestamp || 0));
       let runningAddedFunds = 0;
       let lastLogMeta = { prev: 0, delta: 0, total: 0, timestamp: null };
@@ -59,33 +83,33 @@ export default function WalletProfile({ currentUser }) {
           if (!Number.isNaN(delta)) {
             const previousTotal = runningAddedFunds;
             runningAddedFunds += delta;
-            lastLogMeta = {
-              prev: previousTotal,
-              delta: delta,
-              total: runningAddedFunds,
-              timestamp: log.action_timestamp ? new Date(log.action_timestamp).toLocaleString() : new Date().toLocaleString()
-            };
+            lastLogMeta = { prev: previousTotal, delta: delta, total: runningAddedFunds, timestamp: log.action_timestamp ? new Date(log.action_timestamp).toLocaleString() : new Date().toLocaleString() };
           }
         }
       });
       setTotalAddedFunds(runningAddedFunds);
       setLastFundsLog(lastLogMeta);
 
+      // ============================================
       // CARD 2: TOTAL ACCUMULATED CLAIMS (Global)
+      // ============================================
       const globalClaimsSum = safeProfiles.reduce((sum, p) => sum + Number(p.total_amount_claimed || 0), 0);
       setCompanyTotalApproved(globalClaimsSum);
 
-      if (allWalletLogs.length > 0) {
-        const latestGlobalLog = allWalletLogs[0];
+      if (latestGlobalRes.data && latestGlobalRes.data.length > 0) {
+        const latestGlobalLog = latestGlobalRes.data[0];
         const globallyTaggedProf = safeProfiles.find(prof => prof.id === latestGlobalLog.member_id);
         setLastGlobalUpdate(new Date(latestGlobalLog.action_timestamp).toLocaleString());
         setLastGlobalUser(globallyTaggedProf?.full_name || 'System Member');
         setLastGlobalUserAvatar(globallyTaggedProf?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg');
       }
 
-      // PERSONAL WALLET LOGS MAP
-      const myLogs = allWalletLogs.filter(log => log.member_id === currentUser.id);
-      setPersonalLedger(myLogs);
+      // ============================================
+      // USER HUD & PAGINATED TABLE DATA
+      // ============================================
+      setLatestUserTx(latestPersonalRes.data?.[0] || null);
+      setPersonalLedger(paginatedPersonalRes.data || []);
+      if (paginatedPersonalRes.count !== null) setTotalCount(paginatedPersonalRes.count);
 
     } catch (err) {
       console.error('Wallet fetch infrastructure failure:', err);
@@ -95,14 +119,16 @@ export default function WalletProfile({ currentUser }) {
   };
 
   const remainingCompanyBudget = totalAddedFunds - companyTotalApproved;
-  const userTotalApproved = personalLedger.length > 0 ? Number(personalLedger[0].new_amount) : 0;
-  const latestUserTx = personalLedger[0];
-
-  if (loading) return <div className="p-8 text-center text-slate-500 font-medium">Syncing Isolated Wallet Ledgers...</div>;
+  const userTotalApproved = latestUserTx ? Number(latestUserTx.new_amount) : 0;
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <h2 className="text-xl font-extrabold text-slate-900 tracking-tight border-b pb-3 border-slate-200">🏦 Organization Financial Treasury</h2>
+      
+      <div className="flex justify-between items-end border-b pb-3 border-slate-200">
+        <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">🏦 Organization Financial Treasury</h2>
+        {loading && <span className="text-xs font-bold text-blue-500 animate-pulse bg-blue-50 px-3 py-1 rounded-full">Syncing...</span>}
+      </div>
       
       {/* HUD DASHBOARD */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -188,30 +214,49 @@ export default function WalletProfile({ currentUser }) {
 
       <div className="bg-white border rounded-xl shadow-sm overflow-hidden mt-6">
         <div className="px-5 py-4 border-b bg-slate-50 font-bold text-slate-800 text-sm tracking-wide">📋 Personal Mathematical Ledger Log</div>
-        <table className="w-full text-left border-collapse text-sm">
-          <thead>
-            <tr className="bg-slate-100 text-slate-500 font-semibold text-[11px] uppercase tracking-wider border-b">
-              <th className="p-3">Execution Date</th>
-              <th className="p-3">Reference Note</th>
-              <th className="p-3 text-right">Previous Bal.</th>
-              <th className="p-3 text-right">Claim Added</th>
-              <th className="p-3 text-right font-black text-slate-800">New Ledger Total</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 font-mono text-xs">
-            {personalLedger.length === 0 ? (
-              <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic font-sans">No isolated ledger records active.</td></tr>
-            ) : personalLedger.map(log => (
-              <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
-                <td className="p-3 text-slate-400">{new Date(log.action_timestamp).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})}</td>
-                <td className="p-3 text-slate-600 font-sans font-medium">{log.notes}</td>
-                <td className="p-3 text-slate-500 text-right">${Number(log.prev_amount).toLocaleString()}</td>
-                <td className="p-3 text-green-600 font-bold text-right">+${(Number(log.delta_amount)).toLocaleString()}</td>
-                <td className="p-3 text-slate-900 font-black text-right bg-slate-50/30">${Number(log.new_amount).toLocaleString()}</td>
+        
+        <div className="overflow-x-auto min-h-[300px]">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-100 text-slate-500 font-semibold text-[11px] uppercase tracking-wider border-b">
+                <th className="p-3">Execution Date</th>
+                <th className="p-3">Reference Note</th>
+                <th className="p-3 text-right">Previous Bal.</th>
+                <th className="p-3 text-right">Claim Added</th>
+                <th className="p-3 text-right font-black text-slate-800">New Ledger Total</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-mono text-xs">
+              {personalLedger.length === 0 ? (
+                <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic font-sans">No isolated ledger records active.</td></tr>
+              ) : personalLedger.map(log => (
+                <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="p-3 text-slate-400">{new Date(log.action_timestamp).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})}</td>
+                  <td className="p-3 text-slate-600 font-sans font-medium">{log.notes}</td>
+                  <td className="p-3 text-slate-500 text-right">${Number(log.prev_amount).toLocaleString()}</td>
+                  <td className="p-3 text-green-600 font-bold text-right">+${(Number(log.delta_amount)).toLocaleString()}</td>
+                  <td className="p-3 text-slate-900 font-black text-right bg-slate-50/30">${Number(log.new_amount).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 📄 PAGINATION CONTROLS */}
+        {totalCount > 0 && (
+          <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <p className="text-xs text-slate-500 font-medium">
+              Showing <span className="font-bold text-slate-900">{(page - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="font-bold text-slate-900">{Math.min(page * ITEMS_PER_PAGE, totalCount)}</span> of <span className="font-bold text-slate-900">{totalCount}</span> entries
+            </p>
+            
+            <div className="flex gap-2">
+              <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm transition-all">← Prev</button>
+              <div className="flex items-center px-3 font-mono text-xs font-bold text-slate-400 bg-slate-100 rounded-lg">{page} / {totalPages}</div>
+              <button disabled={page === totalPages || totalPages === 0} onClick={() => setPage(p => p + 1)} className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm transition-all">Next →</button>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );

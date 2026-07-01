@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
-
+import toast from 'react-hot-toast';
 export default function StaffDirectory({ allProfiles = [], fetchAdminData, currentUser }) {
   const [editingUser, setEditingUser] = useState(null);
   const [adjustedBalance, setAdjustedBalance] = useState('');
@@ -49,7 +49,7 @@ export default function StaffDirectory({ allProfiles = [], fetchAdminData, curre
     const nextBalance = Number(adjustedBalance);
 
     if (Number.isNaN(nextBalance)) {
-      alert('Wallet balance must be a valid number.');
+      toast.success('Wallet balance must be a valid number.');
       return;
     }
 
@@ -64,7 +64,7 @@ export default function StaffDirectory({ allProfiles = [], fetchAdminData, curre
     }
 
     if (Object.keys(payload).length === 0) {
-      alert('No changes detected. Please update the role or wallet balance before saving.');
+      toast.success('No changes detected. Please update the role or wallet balance before saving.');
       return;
     }
 
@@ -109,10 +109,10 @@ export default function StaffDirectory({ allProfiles = [], fetchAdminData, curre
       closeEditForm();
       await safeRefresh();
 
-      alert('Staff profile updated successfully.');
+      toast.success('Staff profile updated successfully.');
     } catch (err) {
       console.error('Update staff member error:', err);
-      alert(`Update failed: ${err.message}`);
+      toast.success(`Update failed: ${err.message}`);
     } finally {
       setSavingUserId(null);
     }
@@ -161,10 +161,10 @@ export default function StaffDirectory({ allProfiles = [], fetchAdminData, curre
 
       await safeRefresh();
 
-      alert(nextActiveStatus ? 'Staff member activated.' : 'Staff member deactivated.');
+      toast.success(nextActiveStatus ? 'Staff member activated.' : 'Staff member deactivated.');
     } catch (err) {
       console.error('Toggle active status error:', err);
-      alert(
+      toast.success(
         `Status update failed: ${err.message}\n\nIf the error says column "is_active" does not exist, run the SQL migration below.`
       );
     } finally {

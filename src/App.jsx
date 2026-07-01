@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
+import { Toaster } from 'react-hot-toast';
 import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
 import SuperAdminLayout from './pages/SuperAdminLayout';
@@ -14,8 +16,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
-  
-  const [activePage, setActivePage] = useState('home'); 
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -59,11 +59,9 @@ export default function App() {
         
         if (insertedRows && insertedRows.length > 0) {
           setCurrentUser(insertedRows[0]);
-          if (insertedRows[0]?.is_super_admin) setActivePage('super_admin');
         }
       } else {
         setCurrentUser(profile);
-        if (profile?.is_super_admin) setActivePage('super_admin');
       }
     } catch (err) {
       console.error("Profile sync error:", err);
@@ -86,54 +84,51 @@ export default function App() {
   };
 
   if (loading) return <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 space-y-4"><div className="w-12 h-12 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin shadow-md"></div><div className="text-xs font-bold text-slate-500 font-mono tracking-widest uppercase animate-pulse">Initializing Secure Gateways...</div></div>;
-
   if (isResettingPassword) return <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4"><form onSubmit={handleUpdatePassword} className="bg-white p-6 rounded-xl border border-slate-200 shadow-md max-w-sm w-full space-y-4"><div><h3 className="text-base font-black text-slate-900 uppercase tracking-wider">🔒 Update Account Password</h3><p className="text-xs text-slate-400 mt-1">Provide your fresh configuration entry below.</p></div><input type="password" placeholder="Type new secure password..." value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full text-xs p-3 bg-slate-50 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required /><button type="submit" className="w-full bg-slate-900 text-white font-bold text-xs py-2.5 rounded-lg shadow-md">Save New Password</button></form></div>;
-
   if (!session) return <Login />;
 
-  // ====================================================================
-  // 🧭 MASTER ROUTER LOGIC (NO EARLY RETURNS)
-  // ====================================================================
-  let CurrentScreen;
-
-  if (activePage === 'receipt_form') {
-    CurrentScreen = <ReceiptForm currentUser={currentUser} setActivePage={setActivePage} />;
-  } else if (activePage === 'receipt_vault') {
-    CurrentScreen = <ReceiptViewer currentUser={currentUser} setActivePage={setActivePage} />;
-  } else if (activePage === 'super_admin' && currentUser?.is_super_admin) {
-    CurrentScreen = <SuperAdminLayout currentUser={currentUser} setActivePage={setActivePage} />;
-  } else {
-    // STANDARD HOME VIEWS
-    if (currentUser?.role === 'admin') {
-      CurrentScreen = <AdminPanel currentUser={currentUser} setActivePage={setActivePage} />;
-    } else if (currentUser?.role === 'viewer' || currentUser?.role === 'su') {
-      CurrentScreen = <WalletProfile currentUser={currentUser} setActivePage={setActivePage} />;
-    } else {
-      CurrentScreen = <Dashboard currentUser={currentUser} setActivePage={setActivePage} />;
-    }
+  // 🏛️ Dynamic Home Route Switchboard based on role
+  function HomeRouteSelector() {
+    if (currentUser?.role === 'admin') return <AdminPanel currentUser={currentUser} />;
+    if (currentUser?.role === 'viewer' || currentUser?.role === 'su') return <WalletProfile currentUser={currentUser} />;
+    return <Dashboard currentUser={currentUser} />;
   }
 
-  // ====================================================================
-  // 🎨 FINAL RENDER (GUARANTEES BUTTON ALWAYS SHOWS)
-  // ====================================================================
   return (
-    <div className="min-h-screen bg-slate-50 relative">
-      
-      {/* 👑 SUPER ADMIN FLOATING TOGGLE - High Z-Index ensures it sits above sidebars */}
-      {currentUser?.is_super_admin && (
-        <div className="fixed bottom-6 right-6 z-[9999]">
-          <button 
-            onClick={() => setActivePage(activePage === 'super_admin' ? 'home' : 'super_admin')}
-            className="bg-slate-900 hover:bg-black text-white px-6 py-3 rounded-full shadow-2xl font-black text-sm tracking-wider border-2 border-slate-700 flex items-center gap-2 transition-transform hover:scale-105"
-          >
-            {activePage === 'super_admin' ? '👤 View as Standard User' : '⚡ Switch to Master Console'}
-          </button>
-        </div>
-      )}
+    <Router>
+      <div className="min-h-screen bg-slate-50 relative">
+        <Toaster position="top-right" toastOptions={{ className: 'text-sm font-bold shadow-xl rounded-xl' }} />
+        
+        <Routes>
+          <Route path="/" element={<HomeRouteSelector />} />
+          <Route path="/receipt-form" element={<ReceiptForm currentUser={currentUser} />} />
+          <Route path="/receipt-vault" element={<ReceiptViewer currentUser={currentUser} />} />
+          <Route path="/super-admin" element={currentUser?.is_super_admin ? <SuperAdminLayout currentUser={currentUser} /> : <Navigate to="/" />} />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
 
-      {/* Render whatever screen was decided in the routing logic above */}
-      {CurrentScreen}
-      
+        {/* Floating Toggle Button separated into a subcomponent to safely tap into routing hooks */}
+        <SuperAdminToggle currentUser={currentUser} />
+      </div>
+    </Router>
+  );
+}
+
+function SuperAdminToggle({ currentUser }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  if (!currentUser?.is_super_admin) return null;
+  const isSuperAdminPage = location.pathname === '/super-admin';
+
+  return (
+    <div className="fixed bottom-6 right-6 z-[9999]">
+      <button 
+        onClick={() => navigate(isSuperAdminPage ? '/' : '/super-admin')}
+        className="bg-slate-900 hover:bg-black text-white px-6 py-3 rounded-full shadow-2xl font-black text-sm tracking-wider border-2 border-slate-700 flex items-center gap-2 transition-transform hover:scale-105"
+      >
+        {isSuperAdminPage ? '👤 View as Standard User' : '⚡ Switch to Master Console'}
+      </button>
     </div>
   );
 }

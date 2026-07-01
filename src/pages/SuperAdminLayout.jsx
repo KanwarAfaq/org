@@ -1,99 +1,162 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import toast from 'react-hot-toast';
+import StaffDirectory from '../components/StaffDirectory'; 
 import CategoryManager from '../components/CategoryManager';
 import MasterWorkflowLedger from '../components/MasterWorkflowLedger';
 import MasterFinancialLedger from '../components/MasterFinancialLedger';
 import ReportGenerator from '../components/ReportGenerator';
+import { useNavigate } from 'react-router-dom';
 
-export default function SuperAdminLayout({ currentUser, setActivePage }) {
+export default function SuperAdminLayout({ currentUser }) {
   const [activeView, setActiveView] = useState('categories');
+  const [allProfiles, setAllProfiles] = useState([]);
+  const navigate= useNavigate();
+  useEffect(() => {
+    const fetchProfiles = async () => {
+      const { data } = await supabase.from('profiles').select('*').order('full_name', { ascending: true });
+      if (data) setAllProfiles(data);
+    };
+    fetchProfiles();
+  }, []);
 
   if (!currentUser?.is_super_admin) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
-        <div className="bg-white border border-red-200 p-8 rounded-2xl shadow-xl max-w-md text-center">
-          <h2 className="text-2xl font-black text-slate-900 mb-2">🛑 Access Denied</h2>
-          <p className="text-slate-500 mb-6">You do not have Super Admin clearance to view this console.</p>
-          {/* ⚙️ FIXED: This button now correctly sends unauthorized users back HOME */}
-          <button onClick={() => setActivePage('home')} className="bg-slate-900 text-white font-bold px-6 py-2 rounded-lg">Return to Dashboard</button>
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6">
+        <div className="bg-white/10 backdrop-blur-lg border border-red-500/30 p-8 rounded-3xl shadow-2xl max-w-md text-center">
+          <h2 className="text-3xl font-black text-white mb-2 tracking-tight">🛑 Access Denied</h2>
+          <p className="text-slate-400 mb-8 font-medium">Clearance Level: Master Admin Required.</p>
+          <button onClick={() => navigate('/')} className="...">Return to Dashboard</button>
         </div>
       </div>
     );
   }
 
-  const handleSignOut = async () => {
-    if (window.confirm("Sign out of Master Console?")) await supabase.auth.signOut();
+const handleSignOut = () => {
+    toast((t) => (
+      <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-sm w-full bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto border border-slate-700 overflow-hidden`}>
+        <div className="p-5 text-center border-b border-slate-800">
+          <div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center text-blue-400 text-2xl mx-auto mb-3">
+            🔌
+          </div>
+          <h3 className="text-sm font-black text-white">Disconnect Console?</h3>
+          <p className="text-xs text-slate-400 mt-2 font-medium">
+            This will sign you out of your current secure session.
+          </p>
+        </div>
+        
+        <div className="flex p-3 gap-3 bg-slate-800/50">
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="flex-1 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2.5 rounded-xl transition-colors shadow-sm"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t.id);
+              await supabase.auth.signOut();
+            }}
+            className="flex-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs py-2.5 rounded-xl transition-all shadow-md"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity, id: 'signout-confirm' });
+  };
+
+  const NavButton = ({ id, icon, label, isDanger }) => {
+    const isActive = activeView === id;
+    if (isDanger) {
+      return (
+        <button onClick={() => navigate('/receipt-vault')} className="...">🗄️ Global Receipt Vault</button>
+      );
+    }
+    return (
+      <button onClick={() => setActiveView(id)} className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/50' : 'hover:bg-white/5 text-slate-400 hover:text-slate-200'}`}>
+        <span className="text-lg">{icon}</span> {label}
+      </button>
+    );
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
+    <div className="flex h-screen bg-slate-950 overflow-hidden font-sans text-slate-200">
       
-      {/* SIDEBAR NAVIGATION */}
-      <div className="w-64 bg-slate-900 text-slate-300 flex flex-col shadow-2xl z-20">
-        <div className="p-6 border-b border-slate-800">
-          <h1 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-            <span className="text-blue-500">⚡</span> MASTER ADMIN
-          </h1>
-          <p className="text-[10px] text-slate-500 font-mono mt-1 uppercase tracking-widest">Global Command Center</p>
+      {/* 🌑 MODERN GLASS SIDEBAR */}
+      <div className="w-72 bg-slate-900/50 backdrop-blur-xl border-r border-slate-800/50 flex flex-col shadow-2xl z-20">
+        <div className="p-8 border-b border-slate-800/50">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+              <span className="text-white text-sm font-black">⚡</span>
+            </div>
+            <h1 className="text-xl font-black text-white tracking-tight">GOD MODE</h1>
+          </div>
+          <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest pl-11">Command Center</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          <button onClick={() => setActiveView('categories')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeView === 'categories' ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-800 text-slate-400'}`}>
-            🗂️ Category Manager
-          </button>
-          
-          <button onClick={() => setActiveView('workflows')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeView === 'workflows' ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-800 text-slate-400'}`}>
-            📋 Master Workflows
-          </button>
-          
-          <button onClick={() => setActiveView('financials')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeView === 'financials' ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-800 text-slate-400'}`}>
-            🏦 Global Ledgers
-          </button>
-
-          <button onClick={() => setActiveView('reports')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeView === 'reports' ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-800 text-slate-400'}`}>
-            🖨️ PDF / CSV Reports
-          </button>
-          
-          {/* ⚙️ FIXED: The Vault button correctly belongs here in the sidebar! */}
-          <button onClick={() => setActivePage('receipt_vault')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all hover:bg-emerald-900/40 text-emerald-400 border border-emerald-900/50 mt-4">
-            🗄️ Global Receipt Vault
-          </button>
+        <div className="flex-1 overflow-y-auto py-6 px-4 space-y-2">
+          <NavButton id="categories" icon="🗂️" label="System Configuration" />
+          <NavButton id="workflows" icon="📋" label="Global Workflows" />
+          <NavButton id="financials" icon="🏦" label="Master Ledger" />
+          <NavButton id="reports" icon="🖨️" label="Data Export Engine" />
+          <NavButton id="directory" icon="👥" label="Staff Directory" />
+          <div className="pt-6 mt-6 border-t border-slate-800/50">
+            <NavButton id="receipt_vault" icon="🗄️" label="Global Receipt Vault" isDanger={true} />
+          </div>
         </div>
            
-        <div className="p-4 border-t border-slate-800">
-          <button onClick={handleSignOut} className="w-full bg-red-950/30 text-red-400 hover:bg-red-900/50 hover:text-red-300 py-2.5 rounded-lg text-xs font-bold transition-colors">
-            Exit System
+        <div className="p-6 border-t border-slate-800/50">
+          <button onClick={handleSignOut} className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 py-3 rounded-xl text-xs font-bold transition-all flex justify-center items-center gap-2">
+            🔌 Terminate Session
           </button>
         </div>
       </div>
 
-      {/* MAIN CONTENT AREA */}
-      <div className="flex-1 flex flex-col relative h-full overflow-hidden">
+      {/* ☀️ MAIN CONTENT AREA */}
+      <div className="flex-1 flex flex-col relative h-full overflow-hidden bg-slate-50 text-slate-900">
         
-        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-8 z-10 shadow-sm shrink-0">
-          <h2 className="text-lg font-black text-slate-800">
-            {activeView === 'categories' && 'System Configuration'}
-            {activeView === 'workflows' && 'Global Workflow Oversight'}
-            {activeView === 'financials' && 'Master Financial Ledgers'}
-            {activeView === 'reports' && 'Data Export Engine'}
-          </h2>
-          
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-xs font-bold text-slate-900 leading-tight">{currentUser.full_name}</p>
-              <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Super Admin Active</p>
+        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 h-20 flex items-center justify-between px-10 z-10 shadow-sm shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-xl shadow-inner">
+              {/* FIXED: Dynamic Icons for the header */}
+              {activeView === 'categories' && '🗂️'}
+              {activeView === 'workflows' && '📋'}
+              {activeView === 'financials' && '🏦'}
+              {activeView === 'reports' && '🖨️'}
+              {activeView === 'directory' && '👥'}
             </div>
-            {/* Added referrerPolicy to stop the Facebook browser tracking warning */}
-            <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg'} referrerPolicy="no-referrer" className="w-9 h-9 rounded-full border-2 border-blue-500 shadow-sm" alt="Admin" />
+            <div>
+              <h2 className="text-xl font-black text-slate-800 tracking-tight">
+                {/* FIXED: Removed the component from here, replaced with text */}
+                {activeView === 'categories' && 'System Configuration'}
+                {activeView === 'workflows' && 'Global Workflow Oversight'}
+                {activeView === 'financials' && 'Master Financial Ledgers'}
+                {activeView === 'reports' && 'Data Export Engine'}
+                {activeView === 'directory' && 'Staff Directory'}
+              </h2>
+              <p className="text-xs font-bold text-slate-400 mt-0.5">Live Database Connection</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-4 bg-slate-50 p-2 pr-4 rounded-full border border-slate-200 shadow-sm">
+            <img src={currentUser?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.full_name || 'U')}&background=0f172a&color=38bdf8&rounded=true&bold=true`} referrerPolicy="no-referrer" className="w-10 h-10 rounded-full bg-white shadow-sm" alt="Admin" />
+            <div className="text-left">
+              <p className="text-sm font-black text-slate-900 leading-tight">{currentUser.full_name}</p>
+              <p className="text-[10px] text-blue-600 font-black uppercase tracking-widest mt-0.5">Super Admin</p>
+            </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-8 bg-slate-50 relative">
-          <div className="max-w-6xl mx-auto pb-12 animate-fadeIn">
+        <main className="flex-1 overflow-y-auto p-10 relative">
+          <div className="max-w-7xl mx-auto pb-12 animate-fadeIn">
             {activeView === 'categories' && <CategoryManager />}
             {activeView === 'workflows' && <MasterWorkflowLedger currentUser={currentUser} />}
             {activeView === 'financials' && <MasterFinancialLedger />}
             {activeView === 'reports' && <ReportGenerator />}
+            
+            {/* FIXED: The Staff Directory component safely placed in the main body! */}
+            {activeView === 'directory' && <StaffDirectory allProfiles={allProfiles} currentUser={currentUser} fetchAdminData={() => {}} />}
           </div>
         </main>
       </div>

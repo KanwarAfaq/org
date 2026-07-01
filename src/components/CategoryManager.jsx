@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
-
+import toast from 'react-hot-toast';
 export default function CategoryManager() {
   const [targetTable, setTargetTable] = useState('workflow_categories');
   const [categories, setCategories] = useState([]);
@@ -21,7 +21,7 @@ export default function CategoryManager() {
 
   const handleAddCategory = async (e) => {
     e.preventDefault();
-    if (!newCatName.trim()) return alert('Category name is required.');
+    if (!newCatName.trim()) return toast.success('Category name is required.');
     const { error } = await supabase.from(targetTable).insert({ name: newCatName.trim(), icon: newCatIcon });
     if (!error) { setNewCatName(''); setNewCatIcon(targetTable === 'workflow_categories' ? '📦' : '🧾'); fetchCategories(); }
   };

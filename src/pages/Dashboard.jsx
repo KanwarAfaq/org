@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import WalletProfile from './WalletProfile'; 
+import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 
-export default function Dashboard({ currentUser, setActivePage }) {
+export default function Dashboard({ currentUser }) {
   const [currentTab, setCurrentTab] = useState('workflow'); 
   const [dbCategories, setDbCategories] = useState([]);
-  
+  const navigate = useNavigate();
   // Form State (Updated for multiple categories)
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [customCategory, setCustomCategory] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  
+  const [quickAmounts, setQuickAmounts] = useState([]);
   // Verifier Selection State
   const [allUsers, setAllUsers] = useState([]);
   const [selectedTagUsers, setSelectedTagUsers] = useState([]);
@@ -30,7 +32,7 @@ export default function Dashboard({ currentUser, setActivePage }) {
     fetchUsers();
     fetchActiveCategories();
     fetchDashboardData();
-
+fetchAmounts();
     const workflowChannel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public' }, () => {
@@ -39,6 +41,10 @@ export default function Dashboard({ currentUser, setActivePage }) {
 
     return () => supabase.removeChannel(workflowChannel);
   }, [currentUser?.id]);
+const fetchAmounts = async () => {
+  const { data } = await supabase.from('quick_amounts').select('amount').eq('is_active', true).order('amount', { ascending: true });
+  if (data) setQuickAmounts(data.map(item => item.amount));
+};
 
   const fetchActiveCategories = async () => {
     const { data } = await supabase.from('workflow_categories').select('*').eq('is_active', true).order('created_at', { ascending: true });
@@ -47,7 +53,6 @@ export default function Dashboard({ currentUser, setActivePage }) {
 // 🆕 NEW: Master Refresh Function
   const handleRefreshAll = async () => {
     setLoading(true);
-    
     // Clear out the form so it feels like a fresh page
     setSelectedCategories([]); 
     setCustomCategory(''); 
@@ -62,6 +67,39 @@ export default function Dashboard({ currentUser, setActivePage }) {
       fetchUsers(),
       fetchDashboardData() // This handles setting loading back to false
     ]);
+  };
+  const handleSignOut = () => {
+    toast((t) => (
+      <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-sm w-full bg-white shadow-2xl rounded-2xl pointer-events-auto border border-slate-100 overflow-hidden`}>
+        <div className="p-5 text-center border-b border-slate-100">
+          <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center text-red-500 text-2xl mx-auto mb-3">
+            👋
+          </div>
+          <h3 className="text-sm font-black text-slate-900">Sign Out?</h3>
+          <p className="text-xs text-slate-500 mt-2 font-medium">
+            Are you sure you want to end your current session?
+          </p>
+        </div>
+        
+        <div className="flex p-3 gap-3 bg-slate-50">
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="flex-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs py-2.5 rounded-xl transition-colors shadow-sm"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t.id);
+              await supabase.auth.signOut();
+            }}
+            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold text-xs py-2.5 rounded-xl transition-colors shadow-md"
+          >
+            Yes, Sign Out
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity, id: 'dashboard-signout' });
   };
   const fetchUsers = async () => {
     const { data } = await supabase.from('profiles').select('id, full_name, email').neq('id', currentUser.id).order('full_name', { ascending: true });
@@ -120,7 +158,7 @@ export default function Dashboard({ currentUser, setActivePage }) {
 
   const handleCreatePost = async (e) => {
     e.preventDefault();
-    if (selectedTagUsers.length === 0) return alert('Assign at least one verifier.');
+    if (selectedTagUsers.length === 0) return toast.success('Assign at least one verifier.');
     
     // Combine selected categories into a single string
     let activeCats = selectedCategories.filter(c => c !== 'custom');
@@ -128,8 +166,8 @@ export default function Dashboard({ currentUser, setActivePage }) {
       activeCats.push(customCategory.trim());
     }
 
-    if (activeCats.length === 0) return alert('Please select at least one category.');
-    if (!amount) return alert('Please enter an amount.');
+    if (activeCats.length === 0) return toast.success('Please select at least one category.');
+    if (!amount) return toast.success('Please enter an amount.');
 
     const finalCategoryString = activeCats.join(' + ');
     const sharedGroupId = crypto.randomUUID();
@@ -157,13 +195,13 @@ export default function Dashboard({ currentUser, setActivePage }) {
       });
 
       await Promise.all(submissionPromises);
-      alert(`Broadcasted to ${selectedTagUsers.length} verifiers!`);
+      toast.success(`Broadcasted to ${selectedTagUsers.length} verifiers!`);
       
       // Reset Form
       setSelectedCategories([]); setCustomCategory(''); setAmount(''); setNote(''); setSelectedTagUsers([]); setVerifierSearch('');
       fetchDashboardData();
     } catch (error) {
-      alert(`Submission failure: ${error.message}`);
+      toast.success(`Submission failure: ${error.message}`);
     }
   };
 
@@ -175,7 +213,7 @@ export default function Dashboard({ currentUser, setActivePage }) {
 
   const handleWorkflowAction = async (postId, status, flagColor) => {
     const customReason = reasonMap[postId] || '';
-    if ((status === 'disapproved' || status === 'edit_requested') && !customReason.trim()) return alert('Provide a reason.');
+    if ((status === 'disapproved' || status === 'edit_requested') && !customReason.trim()) return toast.success('Provide a reason.');
 
     try {
       const { data: targetPost, error: fetchPostError } = await supabase.from('posts').select('*').eq('id', postId).maybeSingle();
@@ -187,7 +225,7 @@ export default function Dashboard({ currentUser, setActivePage }) {
         const { data: groupPosts } = await supabase.from('posts').select('*');
         const alreadyApproved = (groupPosts || []).some(p => p.action_reason?.includes(groupId) && p.status === 'approved' && p.id !== postId);
         if (alreadyApproved) {
-          alert("Request group already approved by another verifier!");
+          toast.success("Request group already approved by another verifier!");
           await supabase.from('posts').update({ status: 'deactivated', flag_color: 'slate', action_reason: `System: Already approved.`, updated_at: new Date().toISOString()}).eq('id', postId);
           fetchDashboardData(); return;
         }
@@ -233,15 +271,15 @@ export default function Dashboard({ currentUser, setActivePage }) {
 
       fetchDashboardData();
     } catch (err) {
-      alert(`Transaction Failed: ${err.message}`);
+      toast.success(`Transaction Failed: ${err.message}`);
     }
   };
 
   const handleResubmitPost = async (postId, updatedContent) => {
-    if (!updatedContent?.trim()) return alert('Content cannot be blank.');
+    if (!updatedContent?.trim()) return toast.success('Content cannot be blank.');
     await supabase.from('posts').update({ content: updatedContent, status: 'pending', flag_color: 'none', action_reason: null, updated_at: new Date().toISOString() }).eq('id', postId);
     await supabase.from('audit_logs').insert({ id: crypto.randomUUID(), post_id: postId, action_taken: 'RE-SUBMITTED', performed_by: currentUser.id, notes: 'Author revised content.', action_timestamp: new Date().toISOString() });
-    alert('Revised post sent!');
+    toast.success('Revised post sent!');
     fetchDashboardData();
   };
 
@@ -306,18 +344,14 @@ export default function Dashboard({ currentUser, setActivePage }) {
           
           {/* NOW AVAILABLE TO EVERYONE! */}
          <div className="flex border-l border-slate-700 pl-2 ml-2 gap-2">
-            <button type="button" onClick={() => setActivePage('receipt_form')} className="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow">
-              📸 Upload Receipt
-            </button>
-            <button type="button" onClick={() => setActivePage('receipt_vault')} className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow">
-              🗄️ View Vault
-            </button>
+            <button onClick={() => navigate('/receipt-form')} className="...">📸 Upload Receipt</button>
+  <button onClick={() => navigate('/receipt-vault')} className="...">🗄️ View Vault</button>
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2.5">
+       <div className="flex items-center justify-end gap-2.5">
           
-        {/* 🆕 UPDATED: Animated Refresh Button points to handleRefreshAll */}
+          {/* 🆕 UPDATED: Animated Refresh Button points to handleRefreshAll */}
           <button 
             type="button" 
             onClick={handleRefreshAll} 
@@ -327,7 +361,16 @@ export default function Dashboard({ currentUser, setActivePage }) {
             {loading ? <span className="animate-spin text-sm leading-none">⏳</span> : <span>🔄</span>}
             REFRESH DATA
           </button>
-          <button type="button" onClick={async () => { if (window.confirm("Are you sure you want to sign out?")) await supabase.auth.signOut(); }} className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900">❌ SIGN OUT</button>
+          
+          {/* 🆕 UPDATED: Sign Out button now triggers the beautiful Toast instead of window.confirm */}
+          <button 
+            type="button" 
+            onClick={handleSignOut} 
+            className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900 transition-colors"
+          >
+            ❌ SIGN OUT
+          </button>
+          
         </div>
       </div>
 
@@ -378,10 +421,13 @@ export default function Dashboard({ currentUser, setActivePage }) {
                 </div>
 
                 {/* Amount Selection */}
+               {/* Amount Selection */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Amount ($)</label>
+                  
+                  {/* 1. The Dynamic Quick-Select Buttons (From Supabase) */}
                   <div className="flex flex-wrap gap-2 mb-2">
-                    {[100, 500, 1000, 5000, 10000].map(val => (
+                    {quickAmounts.map(val => (
                       <button 
                         key={val} 
                         type="button" 
@@ -393,6 +439,7 @@ export default function Dashboard({ currentUser, setActivePage }) {
                     ))}
                   </div>
 
+                  {/* 2. The Custom Amount Input */}
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
                     <input 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
-
+import toast from 'react-hot-toast';
 export default function TreasuryManager({
   currentTreasuryPool,
   treasuryHistoryLogs = [],
@@ -30,8 +30,8 @@ export default function TreasuryManager({
     if (isProcessing) return;
 
     const inputDelta = Number(treasuryAdjustment);
-    if (Number.isNaN(inputDelta)) return alert('Please enter a valid numeric value.');
-    if (!treasuryNote.trim()) return alert('Please enter a treasury note.');
+    if (Number.isNaN(inputDelta)) return toast.success('Please enter a valid numeric value.');
+    if (!treasuryNote.trim()) return toast.success('Please enter a treasury note.');
 
     setIsProcessing(true);
 
@@ -62,10 +62,10 @@ export default function TreasuryManager({
       setTreasuryAdjustment('');
       setTreasuryNote('');
       await safeRefresh();
-      alert('Treasury entry added successfully.');
+      toast.success('Treasury entry added successfully.');
     } catch (err) {
       console.error('Treasury insert error:', err);
-      alert(`Treasury update failed: ${err.message}`);
+      toast.success(`Treasury update failed: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -100,10 +100,10 @@ export default function TreasuryManager({
 
       await syncCompanyTreasuryTable(nextCalculatedPoolSum);
       await safeRefresh();
-      alert(isCurrentlyActive ? 'Treasury row deactivated.' : 'Treasury row activated.');
+      toast.success(isCurrentlyActive ? 'Treasury row deactivated.' : 'Treasury row activated.');
     } catch (err) {
       console.error('Treasury state toggle error:', err);
-      alert(`Treasury status update failed: ${err.message}`);
+      toast.success(`Treasury status update failed: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -111,7 +111,7 @@ export default function TreasuryManager({
 
   const handleSaveEditedTreasuryRow = async (log) => {
     if (isProcessing) return;
-    if (!editedNoteText.trim()) return alert('Note description cannot be left blank.');
+    if (!editedNoteText.trim()) return toast.success('Note description cannot be left blank.');
 
     setIsProcessing(true);
     try {
@@ -128,9 +128,9 @@ export default function TreasuryManager({
       setEditingLogId(null);
       setEditedNoteText('');
       await safeRefresh();
-      alert('Note updated successfully.');
+      toast.success('Note updated successfully.');
     } catch (err) {
-      alert(`Update failed: ${err.message}`);
+      toast.success(`Update failed: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }

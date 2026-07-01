@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
+import toast from 'react-hot-toast';
 export default function ReportGenerator() {
   const [profiles, setProfiles] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,7 +46,7 @@ export default function ReportGenerator() {
 
       if (timeframe !== 'ALL') {
         if (timeframe === 'CUSTOM') {
-          if (!customFrom || !customTo) return alert("Please select both From and To dates.");
+          if (!customFrom || !customTo) return toast.success("Please select both From and To dates.");
           startDate = new Date(customFrom);
           endDate = new Date(customTo);
           endDate.setHours(23, 59, 59, 999);
@@ -121,14 +121,14 @@ export default function ReportGenerator() {
 
     } catch (error) {
       console.error(error);
-      alert('Failed to generate preview.');
+      toast.success('Failed to generate preview.');
     } finally {
       setIsLoadingPreview(false);
     }
   };
 
   const handleExportCSV = () => {
-    if (!previewData || previewData.length === 0) return alert('No data to export.');
+    if (!previewData || previewData.length === 0) return toast.success('No data to export.');
     setIsExporting(true);
     const headers = ['Date', 'Description', 'Source/Approver', 'Amount ($)', 'Balance ($)'];
     const csvRows = [headers.join(',')];
@@ -147,7 +147,7 @@ export default function ReportGenerator() {
   };
 
   const handleExportPDF = () => {
-    if (!previewData || previewData.length === 0) return alert('No data to export.');
+    if (!previewData || previewData.length === 0) return toast.success('No data to export.');
     setIsExporting(true);
     
     try {
@@ -197,7 +197,7 @@ export default function ReportGenerator() {
       doc.save(`${safeTitle.replace(/ /g, '_')}_${new Date().toLocaleDateString()}.pdf`);
     } catch (error) {
       console.error(error);
-      alert('PDF generation failed.');
+      toast.success('PDF generation failed.');
     } finally {
       setIsExporting(false);
     }

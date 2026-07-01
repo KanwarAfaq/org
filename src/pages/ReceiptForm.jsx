@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import toast from 'react-hot-toast';
+import { Navigate, useNavigate } from 'react-router-dom';
 
-export default function ReceiptForm({ currentUser, setActivePage }) {
-  const CLOUD_NAME = "dfmi4udfs"; 
-  const UPLOAD_PRESET = "org_receipt"; 
-
+export default function ReceiptForm({ currentUser }) {
+  const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME; 
+  const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET; 
+const navigate = useNavigate();
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [customCategory, setCustomCategory] = useState('');
@@ -33,8 +35,8 @@ export default function ReceiptForm({ currentUser, setActivePage }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const finalCategory = selectedCategory === 'custom' ? customCategory.trim() : selectedCategory;
-    if (!finalCategory) return alert("Please select or type a category.");
-    if (!file) return alert("Please attach a receipt photo.");
+    if (!finalCategory) return toast.success("Please select or type a category.");
+    if (!file) return toast.success("Please attach a receipt photo.");
     setIsUploading(true);
 
     try {
@@ -56,11 +58,11 @@ export default function ReceiptForm({ currentUser, setActivePage }) {
       });
 
       if (dbError) throw dbError;
-      alert("Receipt successfully uploaded!");
-     setActivePage('receipt_vault'); // Routes to the new viewer page!
+      toast.success("Receipt successfully uploaded!");
+     navigate('/receipt-vault');
 
     } catch (error) {
-      alert(`Upload Error: ${error.message}`);
+      toast.success(`Upload Error: ${error.message}`);
     } finally {
       setIsUploading(false);
     }
@@ -75,7 +77,7 @@ export default function ReceiptForm({ currentUser, setActivePage }) {
             <h2 className="text-xl font-black">📸 Upload Receipt</h2>
             <p className="text-sm text-slate-400">Submitting as: {currentUser.full_name}</p>
           </div>
-         <button onClick={() => setActivePage('home')} className="text-slate-400 hover:text-white font-bold text-sm bg-slate-800 px-3 py-1.5 rounded-lg transition-colors">Cancel</button>
+         <button onClick={() => navigate('/')} className="...">Cancel</button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">

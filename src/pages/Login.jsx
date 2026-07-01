@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
-
+import toast from 'react-hot-toast';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,14 +19,14 @@ export default function Login() {
         options: { data: { full_name: fullName } }
       });
       if (error) {
-        alert(error.message);
+        toast.success(error.message);
       } else {
-        alert('Registration successful! If email confirmation is enabled, please verify your email; otherwise, you can sign in directly.');
+        toast.success('Registration successful! If email confirmation is enabled, please verify your email; otherwise, you can sign in directly.');
         setIsSignUp(false);
       }
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) alert(error.message);
+      if (error) toast.success(error.message);
     }
     setLoading(false);
   };
@@ -34,7 +34,7 @@ export default function Login() {
   // Dispatch secure password recovery link email
   const handleForgotPassword = async () => {
     if (!email.trim()) {
-      alert("Please input your corporate email address above before requesting a password reset.");
+      toast.success("Please input your corporate email address above before requesting a password reset.");
       return;
     }
     
@@ -45,9 +45,9 @@ export default function Login() {
     setLoading(false);
 
     if (error) {
-      alert(`Recovery request failed: ${error.message}`);
+      toast.success(`Recovery request failed: ${error.message}`);
     } else {
-      alert("A secure password configuration link has been successfully dispatched to your inbox!");
+      toast.success("A secure password configuration link has been successfully dispatched to your inbox!");
     }
   };
 

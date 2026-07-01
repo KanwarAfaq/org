@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
-
+import toast from 'react-hot-toast';
 export default function MasterWorkflowLedger({ currentUser }) {
   const [allWorkflows, setAllWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -107,11 +107,11 @@ export default function MasterWorkflowLedger({ currentUser }) {
         performed_by: currentUser.id, notes: customReason, action_timestamp: new Date().toISOString()
       });
 
-      alert('Admin override executed successfully.');
+      toast.success('Admin override executed successfully.');
       fetchGlobalWorkflows();
     } catch (err) {
       console.error(err);
-      alert(`Override Failed: ${err.message}`);
+      toast.success(`Override Failed: ${err.message}`);
     }
   };
 
