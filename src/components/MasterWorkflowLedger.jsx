@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import toast from 'react-hot-toast';
+
 export default function MasterWorkflowLedger({ currentUser }) {
   const [allWorkflows, setAllWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
 
-  useEffect(() => {
-    fetchGlobalWorkflows();
-  }, []);
+  useEffect(() => { fetchGlobalWorkflows(); }, []);
 
   const fetchGlobalWorkflows = async () => {
     setLoading(true);
@@ -17,102 +16,84 @@ export default function MasterWorkflowLedger({ currentUser }) {
         supabase.from('profiles').select('id, full_name'),
         supabase.from('posts').select('*').order('created_at', { ascending: false })
       ]);
-
       const profiles = profilesRes.data || [];
-      const posts = postsRes.data || [];
-
-      const mappedPosts = posts.map(post => {
+      const mappedPosts = (postsRes.data || []).map(post => {
         const author = profiles.find(p => p.id === post.author_id);
         const tagged = profiles.find(p => p.id === post.tagged_member_id);
-        return {
-          ...post,
-          authorName: author ? author.full_name : 'Unknown User',
-          taggedName: tagged ? tagged.full_name : 'Unknown Verifier'
-        };
+        return { ...post, authorName: author ? author.full_name : 'Unknown User', taggedName: tagged ? tagged.full_name : 'Unknown Verifier' };
       });
-
       setAllWorkflows(mappedPosts);
-    } catch (err) {
-      console.error("Error fetching master workflows:", err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { toast.error('Failed to sync workflows.'); } finally { setLoading(false); }
   };
 
   const handleAdminOverride = async (postId, actionType, currentStatus) => {
-    const customReason = prompt(`Enter reason for forcing status to ${actionType.toUpperCase()}:`, 'Super Admin Override');
-    if (customReason === null) return; // User cancelled
+    // Elegant custom toast to grab the override reason without blocking the thread
+    toast((t) => (
+      <div className="bg-white p-4 rounded-xl shadow-xl border border-slate-100 w-80">
+        <h3 className="font-black text-slate-900 mb-2 text-sm uppercase tracking-wider">Super Admin Override</h3>
+        <p className="text-xs text-slate-500 mb-3">Force status to <span className="font-bold text-slate-800">{actionType.toUpperCase()}</span>.</p>
+        <input type="text" id={`reason-${postId}`} placeholder="Reason for override..." className="w-full text-xs px-3 py-2 bg-slate-50 border rounded-lg focus:ring-2 focus:ring-blue-500 mb-3" />
+        <div className="flex gap-2">
+          <button onClick={() => toast.dismiss(t.id)} className="flex-1 bg-slate-100 text-slate-700 font-bold py-2 rounded-lg text-xs">Cancel</button>
+          <button onClick={async () => {
+            const customReason = document.getElementById(`reason-${postId}`).value || 'Super Admin Override';
+            toast.dismiss(t.id);
+            
+            try {
+              const { data: targetPost } = await supabase.from('posts').select('*').eq('id', postId).single();
+              const groupId = targetPost?.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/)?.[1] || null;
+              const wasPreviouslyApproved = targetPost.status === 'approved';
 
-    try {
-      const { data: targetPost, error: fetchError } = await supabase.from('posts').select('*').eq('id', postId).single();
-      if (fetchError) throw fetchError;
+              // 🔄 SUPER ADMIN CLAWBACK PROTOCOL (Double-Entry Sync)
+              if (wasPreviouslyApproved && actionType !== 'approved') {
+                const amountMatch = targetPost?.content.match(/\$([0-9.,]+)/);
+                if (amountMatch && amountMatch[1]) {
+                  const extractedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
+                  
+                  // 1. Repair Profile
+                  const { data: profile } = await supabase.from('profiles').select('total_amount_claimed').eq('id', targetPost.tagged_member_id).maybeSingle();
+                  const newRepairedAmount = Number(profile?.total_amount_claimed || 0) - extractedAmount; 
+                  await supabase.from('profiles').update({ total_amount_claimed: newRepairedAmount }).eq('id', targetPost.tagged_member_id);
 
-      const groupId = targetPost?.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/)?.[1] || null;
-      const wasPreviouslyApproved = targetPost.status === 'approved';
+                  // 2. Refund Treasury
+                  const { data: treasury } = await supabase.from('company_treasury').select('total_initial_budget').eq('id', 1).maybeSingle();
+                  const newTreasury = Number(treasury?.total_initial_budget || 0) + extractedAmount;
+                  await supabase.from('company_treasury').update({ total_initial_budget: newTreasury }).eq('id', 1);
 
-      // 🔄 FINANCIAL CLAWBACK PROTOCOL
-      if (wasPreviouslyApproved && actionType !== 'approved') {
-        const amountMatch = targetPost?.content.match(/\$([0-9.,]+)/);
-        if (amountMatch && amountMatch[1]) {
-          const extractedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
-          
-          const { data: profile } = await supabase.from('profiles').select('total_amount_claimed').eq('id', targetPost.tagged_member_id).maybeSingle();
-          const prevAmount = Number(profile?.total_amount_claimed || 0);
-          const newRepairedAmount = prevAmount - extractedAmount; 
+                  // 3. Write Ledger Log
+                  await supabase.from('member_wallet_logs').insert({
+                    id: crypto.randomUUID(), member_id: targetPost.tagged_member_id, post_id: postId,
+                    prev_amount: profile?.total_amount_claimed || 0, delta_amount: -Math.abs(extractedAmount), new_amount: newRepairedAmount,
+                    notes: `⚠️ Super Admin Reversal: ${customReason}`, action_timestamp: new Date().toISOString()
+                  });
+                }
+              }
 
-          await supabase.from('profiles').update({ total_amount_claimed: newRepairedAmount }).eq('id', targetPost.tagged_member_id);
+              const dbStatus = actionType === 'void' ? 'disapproved' : actionType;
+              const flagColor = actionType === 'approved' ? 'green' : actionType === 'disapproved' ? 'red' : 'slate';
 
-          await supabase.from('member_wallet_logs').insert({
-            id: crypto.randomUUID(), member_id: targetPost.tagged_member_id, post_id: postId,
-            prev_amount: prevAmount, delta_amount: -Math.abs(extractedAmount), new_amount: newRepairedAmount,
-            notes: `⚠️ Admin Reversal: ${customReason}`, action_timestamp: new Date().toISOString()
-          });
-        }
-      }
+              if (groupId) {
+                const { data: groupPosts } = await supabase.from('posts').select('id, action_reason').neq('id', postId);
+                const siblingRows = (groupPosts || []).filter(p => p.action_reason?.includes(groupId));
+                if (siblingRows.length > 0) {
+                  await supabase.from('posts').update({ status: 'disapproved', flag_color: 'slate', action_reason: `🔒 Closed by Admin Override || GROUP_ID:${groupId}` }).in('id', siblingRows.map(s => s.id));
+                }
+              }
 
-      // Safe Database Mapping: Bypass strict ENUM constraints by mapping "void" to "disapproved" but styling it as "slate"
-      const dbStatus = actionType === 'void' ? 'disapproved' : actionType;
-      const flagColor = actionType === 'approved' ? 'green' : actionType === 'disapproved' ? 'red' : 'slate';
-      const finalActionReason = groupId ? `Admin Override: ${customReason} || GROUP_ID:${groupId}` : `Admin Override: ${customReason}`;
+              await supabase.from('posts').update({ status: dbStatus, flag_color: flagColor, action_reason: groupId ? `Admin Override: ${customReason} || GROUP_ID:${groupId}` : `Admin Override: ${customReason}` }).eq('id', postId);
 
-      // 🚫 GROUP VOIDING PROTOCOL (Kill sibling rows safely)
-      if (groupId) {
-        const { data: groupPosts } = await supabase.from('posts').select('id, action_reason').neq('id', postId);
-        const siblingRows = (groupPosts || []).filter(p => p.action_reason?.includes(groupId));
+              await supabase.from('audit_logs').insert({
+                id: crypto.randomUUID(), post_id: postId, action_taken: `ADMIN_FORCE_${actionType.toUpperCase()}`,
+                performed_by: currentUser.id, notes: customReason, action_timestamp: new Date().toISOString()
+              });
 
-        if (siblingRows.length > 0) {
-          const siblingIds = siblingRows.map(s => s.id);
-          const { error: siblingError } = await supabase.from('posts').update({
-            status: 'disapproved', // Safely map to disapproved for the DB constraint
-            flag_color: 'slate', 
-            action_reason: `🔒 Closed by Admin Override || GROUP_ID:${groupId}`
-          }).in('id', siblingIds);
-
-          if (siblingError) throw new Error(`Sibling Update Failed: ${siblingError.message}`);
-        }
-      }
-
-      // Update Target Post (Removed updated_at to prevent missing-column 400 errors)
-      const { error: mainUpdateError } = await supabase.from('posts').update({ 
-        status: dbStatus, 
-        flag_color: flagColor, 
-        action_reason: finalActionReason 
-      }).eq('id', postId);
-
-      if (mainUpdateError) throw new Error(`Main Update Failed: ${mainUpdateError.message}`);
-
-      // Log the Action
-      await supabase.from('audit_logs').insert({
-        id: crypto.randomUUID(), post_id: postId, action_taken: `ADMIN_FORCE_${actionType.toUpperCase()}`,
-        performed_by: currentUser.id, notes: customReason, action_timestamp: new Date().toISOString()
-      });
-
-      toast.success('Admin override executed successfully.');
-      fetchGlobalWorkflows();
-    } catch (err) {
-      console.error(err);
-      toast.success(`Override Failed: ${err.message}`);
-    }
+              toast.success('Admin override executed. All financials synced.');
+              fetchGlobalWorkflows();
+            } catch (err) { toast.error(`Override Failed: ${err.message}`); }
+          }} className="flex-1 bg-red-600 text-white font-bold py-2 rounded-lg text-xs">Execute Force</button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   };
 
   const filteredWorkflows = allWorkflows.filter(p => statusFilter === 'all' || p.status === statusFilter);

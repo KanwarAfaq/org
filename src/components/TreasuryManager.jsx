@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import toast from 'react-hot-toast';
+
 export default function TreasuryManager({
   currentTreasuryPool,
   treasuryHistoryLogs = [],
@@ -30,15 +31,14 @@ export default function TreasuryManager({
     if (isProcessing) return;
 
     const inputDelta = Number(treasuryAdjustment);
-    if (Number.isNaN(inputDelta)) return toast.success('Please enter a valid numeric value.');
-    if (!treasuryNote.trim()) return toast.success('Please enter a treasury note.');
+    if (Number.isNaN(inputDelta)) return toast.error('Please enter a valid numeric value.');
+    if (!treasuryNote.trim()) return toast.error('Please enter a treasury note.');
 
     setIsProcessing(true);
 
     try {
       const nextCalculatedPoolSum = currentTreasuryPool + inputDelta;
 
-      // 1. Explicitly write to the new financial columns
       const { error } = await supabase
         .from('audit_logs')
         .insert({
@@ -46,7 +46,7 @@ export default function TreasuryManager({
           post_id: null,
           action_taken: 'ADMIN_TREASURY_ADJUST',
           performed_by: currentUser?.id || null,
-          notes: treasuryNote.trim(), // Clean string only
+          notes: treasuryNote.trim(), 
           prev_amount: currentTreasuryPool,
           delta_amount: inputDelta,
           new_amount: nextCalculatedPoolSum,
@@ -56,7 +56,6 @@ export default function TreasuryManager({
 
       if (error) throw error;
 
-      // 2. Synchronize the master table
       await syncCompanyTreasuryTable(nextCalculatedPoolSum);
 
       setTreasuryAdjustment('');
@@ -65,7 +64,7 @@ export default function TreasuryManager({
       toast.success('Treasury entry added successfully.');
     } catch (err) {
       console.error('Treasury insert error:', err);
-      toast.success(`Treasury update failed: ${err.message}`);
+      toast.error(`Treasury update failed: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -73,45 +72,56 @@ export default function TreasuryManager({
 
   const handleToggleTreasuryState = async (log) => {
     if (isProcessing) return;
-
     const isCurrentlyActive = log.is_active;
-    const confirmation = window.confirm(
-      isCurrentlyActive
-        ? 'Are you sure you want to deactivate this entry? This will subtract its value from the total balance.'
-        : 'Are you sure you want to reactivate this entry? This will restore its value to the total balance.'
-    );
-    if (!confirmation) return;
 
-    setIsProcessing(true);
+    // 🎨 CUSTOM TOAST INSTEAD OF WINDOW.CONFIRM
+    toast((t) => (
+      <div className="bg-white p-4 rounded-xl shadow-xl border border-slate-100 max-w-sm">
+        <h3 className="font-black text-slate-900 mb-2">{isCurrentlyActive ? 'Deactivate Entry?' : 'Reactivate Entry?'}</h3>
+        <p className="text-xs text-slate-500 mb-4">
+          {isCurrentlyActive 
+            ? 'This will subtract its value from the total company balance.' 
+            : 'This will restore its value to the total company balance.'}
+        </p>
+        <div className="flex gap-2">
+          <button onClick={() => toast.dismiss(t.id)} className="flex-1 bg-slate-100 text-slate-700 font-bold py-2 rounded-lg text-xs">Cancel</button>
+          <button onClick={async () => {
+            toast.dismiss(t.id);
+            setIsProcessing(true);
 
-    try {
-      const targetDeltaVal = Number(log.delta_amount || 0);
-      const nextCalculatedPoolSum = isCurrentlyActive
-        ? currentTreasuryPool - targetDeltaVal
-        : currentTreasuryPool + targetDeltaVal;
+            try {
+              const targetDeltaVal = Number(log.delta_amount || 0);
+              const nextCalculatedPoolSum = isCurrentlyActive
+                ? currentTreasuryPool - targetDeltaVal
+                : currentTreasuryPool + targetDeltaVal;
 
-      // Update the boolean state rather than string hacking
-      const { error } = await supabase
-        .from('audit_logs')
-        .update({ is_active: !isCurrentlyActive, action_timestamp: new Date().toISOString() })
-        .eq('id', log.id);
+              const { error } = await supabase
+                .from('audit_logs')
+                .update({ is_active: !isCurrentlyActive, action_timestamp: new Date().toISOString() })
+                .eq('id', log.id);
 
-      if (error) throw error;
+              if (error) throw error;
 
-      await syncCompanyTreasuryTable(nextCalculatedPoolSum);
-      await safeRefresh();
-      toast.success(isCurrentlyActive ? 'Treasury row deactivated.' : 'Treasury row activated.');
-    } catch (err) {
-      console.error('Treasury state toggle error:', err);
-      toast.success(`Treasury status update failed: ${err.message}`);
-    } finally {
-      setIsProcessing(false);
-    }
+              await syncCompanyTreasuryTable(nextCalculatedPoolSum);
+              await safeRefresh();
+              toast.success(isCurrentlyActive ? 'Treasury row deactivated.' : 'Treasury row activated.');
+            } catch (err) {
+              console.error('Treasury state toggle error:', err);
+              toast.error(`Treasury status update failed: ${err.message}`);
+            } finally {
+              setIsProcessing(false);
+            }
+          }} className={`flex-1 text-white font-bold py-2 rounded-lg text-xs ${isCurrentlyActive ? 'bg-amber-600' : 'bg-emerald-600'}`}>
+            {isCurrentlyActive ? 'Deactivate' : 'Activate'}
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   };
 
   const handleSaveEditedTreasuryRow = async (log) => {
     if (isProcessing) return;
-    if (!editedNoteText.trim()) return toast.success('Note description cannot be left blank.');
+    if (!editedNoteText.trim()) return toast.error('Note description cannot be left blank.');
 
     setIsProcessing(true);
     try {
@@ -130,7 +140,7 @@ export default function TreasuryManager({
       await safeRefresh();
       toast.success('Note updated successfully.');
     } catch (err) {
-      toast.success(`Update failed: ${err.message}`);
+      toast.error(`Update failed: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -151,7 +161,6 @@ export default function TreasuryManager({
 
       <div className="grid grid-cols-1 gap-4">
         {treasuryHistoryLogs.map((log) => {
-          // Read from exact database columns
           const prevAmount = Number(log.prev_amount || 0).toLocaleString();
           const deltaAmount = Number(log.delta_amount || 0);
           const totalCompiled = Number(log.new_amount || 0).toLocaleString();
@@ -170,10 +179,10 @@ export default function TreasuryManager({
               <div className="py-1">
                 {editingLogId === log.id ? (
                   <div className="mt-2 space-y-2 max-w-md bg-white p-3 rounded-xl border border-slate-200 shadow-inner">
-                    <input type="text" value={editedNoteText} onChange={(e) => setEditedNoteText(e.target.value)} className="w-full bg-slate-50 border rounded-md text-xs px-3 py-2 focus:outline-none" placeholder="Update Note Description" />
+                    <input type="text" value={editedNoteText} onChange={(e) => setEditedNoteText(e.target.value)} className="w-full bg-slate-50 border rounded-md text-xs px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Update Note Description" />
                     <div className="flex gap-2 justify-end pt-1">
                       <button onClick={() => setEditingLogId(null)} className="text-slate-400 text-[10px] font-bold hover:underline">Cancel</button>
-                      <button onClick={() => handleSaveEditedTreasuryRow(log)} className="bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded shadow">Save</button>
+                      <button onClick={() => handleSaveEditedTreasuryRow(log)} className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black px-3 py-1 rounded shadow">Save</button>
                     </div>
                   </div>
                 ) : (
@@ -184,8 +193,8 @@ export default function TreasuryManager({
                     <div className="flex items-center justify-between flex-wrap gap-2 mt-1.5">
                       <p className="text-xs font-medium opacity-75 bg-black/5 px-3 py-1.5 rounded-lg inline-block text-slate-800">With Note: <span className="font-bold font-mono">"{log.notes}"</span></p>
                       <div className="flex gap-3 text-[10px] font-extrabold uppercase tracking-wider">
-                        {!isDeactivated && <button onClick={() => { setEditingLogId(log.id); setEditedNoteText(String(log.notes || '').replace(/\(Edited.*?\)/g, '').trim()); }} className="text-blue-600" disabled={isProcessing}>✏️ Edit Note</button>}
-                        <button onClick={() => handleToggleTreasuryState(log)} className={isDeactivated ? "text-emerald-600" : "text-amber-700"} disabled={isProcessing}>{isDeactivated ? "🔄 Activate" : "🚫 Deactivate"}</button>
+                        {!isDeactivated && <button onClick={() => { setEditingLogId(log.id); setEditedNoteText(String(log.notes || '').replace(/\(Edited.*?\)/g, '').trim()); }} className="text-blue-600 hover:underline" disabled={isProcessing}>✏️ Edit Note</button>}
+                        <button onClick={() => handleToggleTreasuryState(log)} className={isDeactivated ? "text-emerald-600 hover:underline" : "text-amber-700 hover:underline"} disabled={isProcessing}>{isDeactivated ? "🔄 Activate" : "🚫 Deactivate"}</button>
                       </div>
                     </div>
                   </div>
@@ -205,10 +214,10 @@ export default function TreasuryManager({
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Execute Budget Matrix Adjustment</h3>
         <form onSubmit={handleUpdateTreasury} className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input type="number" placeholder="Adjustment Balance Delta Value (+/- $)" value={treasuryAdjustment} onChange={(e) => setTreasuryAdjustment(e.target.value)} className="bg-slate-50 border rounded-xl px-4 py-3 text-sm focus:outline-none md:col-span-2 shadow-inner" required />
-            <button type="submit" className="bg-slate-900 text-white font-bold text-sm px-6 py-3 rounded-xl shadow-md">Apply Entry</button>
+            <input type="number" placeholder="Adjustment Balance Delta Value (+/- $)" value={treasuryAdjustment} onChange={(e) => setTreasuryAdjustment(e.target.value)} className="bg-slate-50 border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 md:col-span-2 shadow-inner" required />
+            <button type="submit" className="bg-slate-900 hover:bg-slate-800 transition-colors text-white font-bold text-sm px-6 py-3 rounded-xl shadow-md">Apply Entry</button>
           </div>
-          <input type="text" placeholder="Provide context note detail string..." value={treasuryNote} onChange={(e) => setTreasuryNote(e.target.value)} className="bg-slate-50 border rounded-xl px-4 py-3 text-sm focus:outline-none w-full shadow-inner" required />
+          <input type="text" placeholder="Provide context note detail string..." value={treasuryNote} onChange={(e) => setTreasuryNote(e.target.value)} className="bg-slate-50 border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full shadow-inner" required />
         </form>
       </div>
     </div>

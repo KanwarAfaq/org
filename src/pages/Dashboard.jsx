@@ -1,25 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import WalletProfile from './WalletProfile'; 
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard({ currentUser }) {
+  const navigate = useNavigate();
   const [currentTab, setCurrentTab] = useState('workflow'); 
   const [dbCategories, setDbCategories] = useState([]);
-  const navigate = useNavigate();
-  // Form State (Updated for multiple categories)
+  
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [customCategory, setCustomCategory] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [quickAmounts, setQuickAmounts] = useState([]);
-  // Verifier Selection State
+  
   const [allUsers, setAllUsers] = useState([]);
   const [selectedTagUsers, setSelectedTagUsers] = useState([]);
   const [verifierSearch, setVerifierSearch] = useState(''); 
   
-  // Data Logs State
   const [inboxPosts, setInboxPosts] = useState([]);
   const [outboxPosts, setOutboxPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,11 +26,10 @@ export default function Dashboard({ currentUser }) {
 
   useEffect(() => {
     if (!currentUser?.id) return;
-    
     fetchUsers();
     fetchActiveCategories();
     fetchDashboardData();
-fetchAmounts();
+
     const workflowChannel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public' }, () => {
@@ -41,66 +38,19 @@ fetchAmounts();
 
     return () => supabase.removeChannel(workflowChannel);
   }, [currentUser?.id]);
-const fetchAmounts = async () => {
-  const { data } = await supabase.from('quick_amounts').select('amount').eq('is_active', true).order('amount', { ascending: true });
-  if (data) setQuickAmounts(data.map(item => item.amount));
-};
 
   const fetchActiveCategories = async () => {
     const { data } = await supabase.from('workflow_categories').select('*').eq('is_active', true).order('created_at', { ascending: true });
     if (data) setDbCategories(data);
   };
-// 🆕 NEW: Master Refresh Function
+
   const handleRefreshAll = async () => {
     setLoading(true);
-    // Clear out the form so it feels like a fresh page
-    setSelectedCategories([]); 
-    setCustomCategory(''); 
-    setAmount(''); 
-    setNote(''); 
-    setSelectedTagUsers([]); 
-    setVerifierSearch('');
+    setSelectedCategories([]); setCustomCategory(''); setAmount(''); setNote(''); setSelectedTagUsers([]); setVerifierSearch('');
+    await Promise.all([fetchActiveCategories(), fetchUsers(), fetchDashboardData()]);
+    toast.success('Data refreshed.');
+  };
 
-    // Fetch ALL system data again
-    await Promise.all([
-      fetchActiveCategories(),
-      fetchUsers(),
-      fetchDashboardData() // This handles setting loading back to false
-    ]);
-  };
-  const handleSignOut = () => {
-    toast((t) => (
-      <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-sm w-full bg-white shadow-2xl rounded-2xl pointer-events-auto border border-slate-100 overflow-hidden`}>
-        <div className="p-5 text-center border-b border-slate-100">
-          <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center text-red-500 text-2xl mx-auto mb-3">
-            👋
-          </div>
-          <h3 className="text-sm font-black text-slate-900">Sign Out?</h3>
-          <p className="text-xs text-slate-500 mt-2 font-medium">
-            Are you sure you want to end your current session?
-          </p>
-        </div>
-        
-        <div className="flex p-3 gap-3 bg-slate-50">
-          <button
-            onClick={() => toast.dismiss(t.id)}
-            className="flex-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs py-2.5 rounded-xl transition-colors shadow-sm"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={async () => {
-              toast.dismiss(t.id);
-              await supabase.auth.signOut();
-            }}
-            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold text-xs py-2.5 rounded-xl transition-colors shadow-md"
-          >
-            Yes, Sign Out
-          </button>
-        </div>
-      </div>
-    ), { duration: Infinity, id: 'dashboard-signout' });
-  };
   const fetchUsers = async () => {
     const { data } = await supabase.from('profiles').select('id, full_name, email').neq('id', currentUser.id).order('full_name', { ascending: true });
     if (data) setAllUsers(data);
@@ -137,37 +87,27 @@ const fetchAmounts = async () => {
         return post;
       });
 
-      const inbox = fullyMappedPosts.filter(p => p.tagged_member_id === currentUser.id);
-      const outbox = fullyMappedPosts.filter(p => p.author_id === currentUser.id);
-      
-      setInboxPosts([...inbox].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
-      setOutboxPosts([...outbox].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      setInboxPosts(fullyMappedPosts.filter(p => p.tagged_member_id === currentUser.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      setOutboxPosts(fullyMappedPosts.filter(p => p.author_id === currentUser.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
     } catch (err) {
-      console.error(err);
+      toast.error('Sync failed.');
     } finally {
       setLoading(false);
     }
   };
 
-  // 🆕 NEW: Multi-Select Category Logic
-  const handleToggleCategory = (catName) => {
-    setSelectedCategories(prev => 
-      prev.includes(catName) ? prev.filter(c => c !== catName) : [...prev, catName]
-    );
-  };
+  const handleToggleCategory = (catName) => setSelectedCategories(prev => prev.includes(catName) ? prev.filter(c => c !== catName) : [...prev, catName]);
+  const handleToggleVerifierCheckbox = (userId) => setSelectedTagUsers(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
 
   const handleCreatePost = async (e) => {
     e.preventDefault();
-    if (selectedTagUsers.length === 0) return toast.success('Assign at least one verifier.');
+    if (selectedTagUsers.length === 0) return toast.error('Assign at least one verifier.');
     
-    // Combine selected categories into a single string
     let activeCats = selectedCategories.filter(c => c !== 'custom');
-    if (selectedCategories.includes('custom') && customCategory.trim()) {
-      activeCats.push(customCategory.trim());
-    }
+    if (selectedCategories.includes('custom') && customCategory.trim()) activeCats.push(customCategory.trim());
 
-    if (activeCats.length === 0) return toast.success('Please select at least one category.');
-    if (!amount) return toast.success('Please enter an amount.');
+    if (activeCats.length === 0) return toast.error('Please select at least one category.');
+    if (!amount) return toast.error('Please enter an amount.');
 
     const finalCategoryString = activeCats.join(' + ');
     const sharedGroupId = crypto.randomUUID();
@@ -177,16 +117,11 @@ const fetchAmounts = async () => {
     try {
       const submissionPromises = selectedTagUsers.map(async (verifierId) => {
         const generatedPostId = crypto.randomUUID();
-        const groupTrackingToken = `GROUP_ID:${sharedGroupId}`;
-
-        const { error: postError } = await supabase.from('posts').insert({
+        await supabase.from('posts').insert({
           id: generatedPostId, author_id: currentUser.id, tagged_member_id: verifierId,
           content: structuredContent, status: 'pending', flag_color: 'none',
-          action_reason: groupTrackingToken, created_at: new Date().toISOString()
+          action_reason: `GROUP_ID:${sharedGroupId}`, created_at: new Date().toISOString()
         });
-
-        if (postError) throw postError;
-
         await supabase.from('audit_logs').insert({
           id: crypto.randomUUID(), post_id: generatedPostId, action_taken: 'CREATED',
           performed_by: currentUser.id, notes: `Created request group ${sharedGroupId}. Assigned: ${verifierId}`,
@@ -196,61 +131,55 @@ const fetchAmounts = async () => {
 
       await Promise.all(submissionPromises);
       toast.success(`Broadcasted to ${selectedTagUsers.length} verifiers!`);
-      
-      // Reset Form
       setSelectedCategories([]); setCustomCategory(''); setAmount(''); setNote(''); setSelectedTagUsers([]); setVerifierSearch('');
       fetchDashboardData();
     } catch (error) {
-      toast.success(`Submission failure: ${error.message}`);
+      toast.error(`Submission failure: ${error.message}`);
     }
   };
 
-  const handleToggleVerifierCheckbox = (userId) => {
-    setSelectedTagUsers(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
-  };
-
-  const filteredUsers = allUsers.filter(u => u.full_name.toLowerCase().includes(verifierSearch.toLowerCase()));
-
   const handleWorkflowAction = async (postId, status, flagColor) => {
     const customReason = reasonMap[postId] || '';
-    if ((status === 'disapproved' || status === 'edit_requested') && !customReason.trim()) return toast.success('Provide a reason.');
+    if ((status === 'disapproved' || status === 'edit_requested') && !customReason.trim()) return toast.error('Provide a reason.');
 
     try {
-      const { data: targetPost, error: fetchPostError } = await supabase.from('posts').select('*').eq('id', postId).maybeSingle();
-      if (fetchPostError) throw fetchPostError;
-
+      const { data: targetPost } = await supabase.from('posts').select('*').eq('id', postId).maybeSingle();
       const groupId = targetPost?.action_reason?.match(/GROUP_ID:([a-f0-9-]+)/)?.[1] || null;
 
       if (status === 'approved' && groupId) {
         const { data: groupPosts } = await supabase.from('posts').select('*');
         const alreadyApproved = (groupPosts || []).some(p => p.action_reason?.includes(groupId) && p.status === 'approved' && p.id !== postId);
         if (alreadyApproved) {
-          toast.success("Request group already approved by another verifier!");
+          toast.error("Group already approved by another verifier!");
           await supabase.from('posts').update({ status: 'deactivated', flag_color: 'slate', action_reason: `System: Already approved.`, updated_at: new Date().toISOString()}).eq('id', postId);
           fetchDashboardData(); return;
         }
       }
 
-      const finalActionReason = groupId ? `${customReason.trim()} || GROUP_ID:${groupId}` : customReason.trim();
-      const { error: updateError } = await supabase.from('posts').update({ status, flag_color: flagColor, action_reason: finalActionReason, updated_at: new Date().toISOString() }).eq('id', postId);
-      if (updateError) throw updateError;
+      await supabase.from('posts').update({ status, flag_color: flagColor, action_reason: groupId ? `${customReason.trim()} || GROUP_ID:${groupId}` : customReason.trim(), updated_at: new Date().toISOString() }).eq('id', postId);
 
       if (status === 'approved') {
         const amountMatch = targetPost?.content.match(/\$([0-9.,]+)/);
         if (amountMatch && amountMatch[1]) {
           const extractedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
+          
+          // 🛡️ DOUBLE-ENTRY LEDGER SYNC (Fixed)
+          // 1. Give money to user
           const { data: profile } = await supabase.from('profiles').select('total_amount_claimed').eq('id', currentUser.id).maybeSingle();
-          const prevAmount = Number(profile?.total_amount_claimed || 0);
-          const newAmount = prevAmount + extractedAmount;
-            
-          const { error: ledgerError } = await supabase.from('member_wallet_logs').insert({
+          const newAmount = Number(profile?.total_amount_claimed || 0) + extractedAmount;
+          await supabase.from('profiles').update({ total_amount_claimed: newAmount }).eq('id', currentUser.id);
+          
+          // 2. Deduct money from Company Treasury
+          const { data: treasury } = await supabase.from('company_treasury').select('total_initial_budget').eq('id', 1).maybeSingle();
+          const newTreasury = Number(treasury?.total_initial_budget || 0) - extractedAmount;
+          await supabase.from('company_treasury').update({ total_initial_budget: newTreasury }).eq('id', 1);
+
+          // 3. Write personal ledger
+          await supabase.from('member_wallet_logs').insert({
             id: crypto.randomUUID(), member_id: currentUser.id, post_id: postId,
-            prev_amount: prevAmount, delta_amount: extractedAmount, new_amount: newAmount,
+            prev_amount: profile?.total_amount_claimed || 0, delta_amount: extractedAmount, new_amount: newAmount,
             notes: `Workflow Approved: ${targetPost?.content.split(' || ')[0]}`, action_timestamp: new Date().toISOString()
           });
-
-          if (ledgerError) throw new Error(`Ledger Save Failed: ${ledgerError.message}`);
-          await supabase.from('profiles').update({ total_amount_claimed: newAmount }).eq('id', currentUser.id);
         }
         
         if (groupId) {
@@ -269,18 +198,31 @@ const fetchAmounts = async () => {
         notes: customReason || `Handled state as ${status}.`, action_timestamp: new Date().toISOString()
       });
 
+      toast.success('Workflow processed.');
       fetchDashboardData();
     } catch (err) {
-      toast.success(`Transaction Failed: ${err.message}`);
+      toast.error(`Transaction Failed: ${err.message}`);
     }
   };
 
   const handleResubmitPost = async (postId, updatedContent) => {
-    if (!updatedContent?.trim()) return toast.success('Content cannot be blank.');
+    if (!updatedContent?.trim()) return toast.error('Content cannot be blank.');
     await supabase.from('posts').update({ content: updatedContent, status: 'pending', flag_color: 'none', action_reason: null, updated_at: new Date().toISOString() }).eq('id', postId);
     await supabase.from('audit_logs').insert({ id: crypto.randomUUID(), post_id: postId, action_taken: 'RE-SUBMITTED', performed_by: currentUser.id, notes: 'Author revised content.', action_timestamp: new Date().toISOString() });
     toast.success('Revised post sent!');
     fetchDashboardData();
+  };
+
+  const handleSignOut = () => {
+    toast((t) => (
+      <div className="bg-white p-4 rounded-xl shadow-xl border border-slate-100 max-w-sm">
+        <h3 className="font-black text-slate-900 mb-2">Sign Out?</h3>
+        <div className="flex gap-2">
+          <button onClick={() => toast.dismiss(t.id)} className="flex-1 bg-slate-100 text-slate-700 font-bold py-2 rounded-lg">Cancel</button>
+          <button onClick={async () => { toast.dismiss(t.id); await supabase.auth.signOut(); }} className="flex-1 bg-red-600 text-white font-bold py-2 rounded-lg">Confirm</button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   };
 
   const renderPostContentWithNote = (fullContent) => {
@@ -320,18 +262,16 @@ const fetchAmounts = async () => {
       const editReqPost = group.find(p => p.status === 'edit_requested');
       if (editReqPost) return { ...editReqPost, displayStatus: 'edit_requested', displayFlag: 'blue', feedbackText: editReqPost.action_reason?.split(' || GROUP_ID')[0] };
 
-      const primary = group[0];
-      return { ...primary, displayStatus: primary.status, displayFlag: primary.flag_color, feedbackText: primary.action_reason?.split(' || GROUP_ID')[0] };
+      return { ...group[0], displayStatus: group[0].status, displayFlag: group[0].flag_color, feedbackText: group[0].action_reason?.split(' || GROUP_ID')[0] };
     });
   }, [outboxPosts]);
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       
-      {/* HEADER BAR */}
       <div className="bg-slate-900 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 text-white">
         <div className="flex items-center gap-3 bg-slate-800/60 p-2 rounded-xl border border-slate-700/50">
-          <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg'} referrerPolicy="no-referrer" className="w-10 h-10 rounded-full..." alt="" />
+          <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg'} referrerPolicy="no-referrer" className="w-10 h-10 rounded-full bg-white shadow" alt="" />
           <div className="text-left leading-tight min-w-0">
             <p className="text-xs font-black text-slate-100 truncate">{currentUser?.full_name || 'System Member'}</p>
             <p className="text-[10px] font-medium text-slate-400 truncate mt-0.5">{currentUser?.email || 'Active verified session'}</p>
@@ -339,38 +279,20 @@ const fetchAmounts = async () => {
         </div>
 
        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => setCurrentTab('workflow')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>📋 Workflows</button>
-          <button type="button" onClick={() => setCurrentTab('wallet')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>🏦 Wallet</button>
+          <button onClick={() => setCurrentTab('workflow')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>📋 Workflows</button>
+          <button onClick={() => setCurrentTab('wallet')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>🏦 Wallet</button>
           
-          {/* NOW AVAILABLE TO EVERYONE! */}
          <div className="flex border-l border-slate-700 pl-2 ml-2 gap-2">
-            <button onClick={() => navigate('/receipt-form')} className="...">📸 Upload Receipt</button>
-  <button onClick={() => navigate('/receipt-vault')} className="...">🗄️ View Vault</button>
+            <button onClick={() => navigate('/receipt-form')} className="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow">📸 Upload Receipt</button>
+            <button onClick={() => navigate('/receipt-vault')} className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow">🗄️ View Vault</button>
           </div>
         </div>
 
-       <div className="flex items-center justify-end gap-2.5">
-          
-          {/* 🆕 UPDATED: Animated Refresh Button points to handleRefreshAll */}
-          <button 
-            type="button" 
-            onClick={handleRefreshAll} 
-            disabled={loading}
-            className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-2 rounded font-mono hover:bg-slate-700 flex items-center gap-2 transition-colors disabled:opacity-50"
-          >
-            {loading ? <span className="animate-spin text-sm leading-none">⏳</span> : <span>🔄</span>}
-            REFRESH DATA
+        <div className="flex items-center justify-end gap-2.5">
+          <button onClick={handleRefreshAll} disabled={loading} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-2 rounded font-mono hover:bg-slate-700 flex items-center gap-2 transition-colors disabled:opacity-50">
+            {loading ? <span className="animate-spin text-sm leading-none">⏳</span> : <span>🔄</span>} REFRESH DATA
           </button>
-          
-          {/* 🆕 UPDATED: Sign Out button now triggers the beautiful Toast instead of window.confirm */}
-          <button 
-            type="button" 
-            onClick={handleSignOut} 
-            className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900 transition-colors"
-          >
-            ❌ SIGN OUT
-          </button>
-          
+          <button onClick={handleSignOut} className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900">❌ SIGN OUT</button>
         </div>
       </div>
 
@@ -378,79 +300,36 @@ const fetchAmounts = async () => {
         <div className="animate-fadeIn"><WalletProfile currentUser={currentUser} /></div>
       ) : (
         <div className="space-y-8 animate-fadeIn">
-          {/* 📊 NEW SUBMISSION FORM */}
+          {/* NEW SUBMISSION FORM */}
           <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
             <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">📊 New Workflow Submission</h3>
             <form onSubmit={handleCreatePost} className="space-y-6">
-              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                {/* 🆕 NEW: Multi-Select Category Chips */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Request Categories (Select Multiple)</label>
                   <div className="flex flex-wrap gap-2 mb-2">
                     {dbCategories.map(cat => (
-                      <button 
-                        key={cat.id} 
-                        type="button" 
-                        onClick={() => handleToggleCategory(cat.name)}
-                        className={`text-xs font-bold px-3 py-1.5 rounded-md border transition-colors ${selectedCategories.includes(cat.name) ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}
-                      >
+                      <button key={cat.id} type="button" onClick={() => handleToggleCategory(cat.name)} className={`text-xs font-bold px-3 py-1.5 rounded-md border transition-colors ${selectedCategories.includes(cat.name) ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}>
                         {cat.icon} {cat.name}
                       </button>
                     ))}
-                    <button 
-                      type="button" 
-                      onClick={() => handleToggleCategory('custom')}
-                      className={`text-xs font-bold px-3 py-1.5 rounded-md border transition-colors ${selectedCategories.includes('custom') ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}
-                    >
-                      ✍️ Custom...
-                    </button>
+                    <button type="button" onClick={() => handleToggleCategory('custom')} className={`text-xs font-bold px-3 py-1.5 rounded-md border transition-colors ${selectedCategories.includes('custom') ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}>✍️ Custom...</button>
                   </div>
-                  
                   {selectedCategories.includes('custom') && (
-                    <input 
-                      type="text" 
-                      placeholder="Type custom category name..." 
-                      value={customCategory} 
-                      onChange={(e) => setCustomCategory(e.target.value)} 
-                      required 
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 animate-fadeIn mt-2" 
-                    />
+                    <input type="text" placeholder="Type custom category name..." value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 animate-fadeIn mt-2" />
                   )}
                 </div>
 
-                {/* Amount Selection */}
-               {/* Amount Selection */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Amount ($)</label>
-                  
-                  {/* 1. The Dynamic Quick-Select Buttons (From Supabase) */}
                   <div className="flex flex-wrap gap-2 mb-2">
-                    {quickAmounts.map(val => (
-                      <button 
-                        key={val} 
-                        type="button" 
-                        onClick={() => setAmount(val.toString())}
-                        className={`text-xs font-bold px-2.5 py-1 rounded-md border transition-colors ${amount === val.toString() ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}
-                      >
-                        ${val.toLocaleString()}
-                      </button>
+                    {[100, 500, 1000, 5000, 10000].map(val => (
+                      <button key={val} type="button" onClick={() => setAmount(val.toString())} className={`text-xs font-bold px-2.5 py-1 rounded-md border transition-colors ${amount === val.toString() ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}>${val.toLocaleString()}</button>
                     ))}
                   </div>
-
-                  {/* 2. The Custom Amount Input */}
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
-                    <input 
-                      type="number" 
-                      min="1"
-                      placeholder="Type custom amount..." 
-                      value={amount} 
-                      onChange={(e) => setAmount(e.target.value)} 
-                      required 
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono" 
-                    />
+                    <input type="number" min="1" placeholder="Type custom amount..." value={amount} onChange={(e) => setAmount(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono" />
                   </div>
                 </div>
               </div>
@@ -470,8 +349,7 @@ const fetchAmounts = async () => {
                       const user = allUsers.find(u => u.id === id);
                       return (
                         <span key={id} className="bg-blue-100 border border-blue-200 text-blue-800 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-2 shadow-sm">
-                          {user?.full_name || 'Unknown'} 
-                          <button type="button" onClick={() => handleToggleVerifierCheckbox(id)} className="text-blue-500 hover:text-red-500 hover:bg-white rounded-full h-4 w-4 flex items-center justify-center leading-none">×</button>
+                          {user?.full_name || 'Unknown'} <button type="button" onClick={() => handleToggleVerifierCheckbox(id)} className="text-blue-500 hover:text-red-500 hover:bg-white rounded-full h-4 w-4 flex items-center justify-center leading-none">×</button>
                         </span>
                       );
                     })
@@ -484,11 +362,11 @@ const fetchAmounts = async () => {
                 </div>
 
                 <div className="bg-slate-50 border border-slate-200 rounded-b-lg p-2 max-h-48 overflow-y-auto shadow-inner">
-                  {filteredUsers.length === 0 ? (
+                  {allUsers.filter(u => u.full_name.toLowerCase().includes(verifierSearch.toLowerCase())).length === 0 ? (
                     <p className="text-xs text-slate-400 text-center py-4">No employees match your search.</p>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                      {filteredUsers.map((user) => (
+                      {allUsers.filter(u => u.full_name.toLowerCase().includes(verifierSearch.toLowerCase())).map((user) => (
                         <label key={user.id} className={`flex items-center space-x-3 p-2.5 border rounded-lg cursor-pointer transition-all ${selectedTagUsers.includes(user.id) ? 'bg-blue-50 border-blue-300 shadow-sm' : 'bg-white border-slate-200 hover:border-blue-400 shadow-sm'}`}>
                           <input type="checkbox" checked={selectedTagUsers.includes(user.id)} onChange={() => handleToggleVerifierCheckbox(user.id)} className="h-4 w-4 rounded text-blue-600 border-slate-300 cursor-pointer focus:ring-blue-500" />
                           <div className="text-left min-w-0">
@@ -503,25 +381,15 @@ const fetchAmounts = async () => {
               </div>
 
               <div className="flex justify-end pt-4">
-                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-black text-sm px-8 py-3 rounded-xl shadow-md transition-transform hover:scale-[1.02]">
-                  🚀 Broadcast Request
-                </button>
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-black text-sm px-8 py-3 rounded-xl shadow-md transition-transform hover:scale-[1.02]">🚀 Broadcast Request</button>
               </div>
             </form>
           </div>
 
-          {/* GRID COLUMNS (Inbox / Outbox) */}
           {loading ? (
-            /* 🆕 NEW: Skeleton Loader for Dashboard Grids */
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="space-y-4">
-                <div className="h-6 w-1/2 bg-slate-200 rounded animate-pulse"></div>
-                {[1,2,3].map(i => <div key={i} className="h-32 bg-slate-200 rounded-xl animate-pulse"></div>)}
-              </div>
-              <div className="space-y-4">
-                <div className="h-6 w-1/2 bg-slate-200 rounded animate-pulse"></div>
-                {[1,2,3].map(i => <div key={i} className="h-28 bg-slate-200 rounded-xl animate-pulse"></div>)}
-              </div>
+              <div className="space-y-4"><div className="h-6 w-1/2 bg-slate-200 rounded animate-pulse"></div>{[1,2,3].map(i => <div key={i} className="h-32 bg-slate-200 rounded-xl animate-pulse"></div>)}</div>
+              <div className="space-y-4"><div className="h-6 w-1/2 bg-slate-200 rounded animate-pulse"></div>{[1,2,3].map(i => <div key={i} className="h-28 bg-slate-200 rounded-xl animate-pulse"></div>)}</div>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
