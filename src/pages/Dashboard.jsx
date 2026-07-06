@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import WalletProfile from './WalletProfile'; 
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import emailjs from '@emailjs/browser';
 
 export default function Dashboard({ currentUser }) {
   const navigate = useNavigate();
@@ -99,6 +100,9 @@ export default function Dashboard({ currentUser }) {
   const handleToggleCategory = (catName) => setSelectedCategories(prev => prev.includes(catName) ? prev.filter(c => c !== catName) : [...prev, catName]);
   const handleToggleVerifierCheckbox = (userId) => setSelectedTagUsers(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
 
+  // ============================================================================
+  // 🚀 CREATION & EMAIL NOTIFICATION ENGINE
+  // ============================================================================
   const handleCreatePost = async (e) => {
     e.preventDefault();
     if (selectedTagUsers.length === 0) return toast.error('Assign at least one verifier.');
@@ -117,27 +121,60 @@ export default function Dashboard({ currentUser }) {
     try {
       const submissionPromises = selectedTagUsers.map(async (verifierId) => {
         const generatedPostId = crypto.randomUUID();
-        await supabase.from('posts').insert({
+        const groupTrackingToken = `GROUP_ID:${sharedGroupId}`;
+        
+        // Find the specific user we are tagging to get their email address
+        const verifierData = allUsers.find(u => u.id === verifierId);
+
+        const { error: postError } = await supabase.from('posts').insert({
           id: generatedPostId, author_id: currentUser.id, tagged_member_id: verifierId,
           content: structuredContent, status: 'pending', flag_color: 'none',
-          action_reason: `GROUP_ID:${sharedGroupId}`, created_at: new Date().toISOString()
+          action_reason: groupTrackingToken, created_at: new Date().toISOString()
         });
+
+        if (postError) throw postError;
+
         await supabase.from('audit_logs').insert({
           id: crypto.randomUUID(), post_id: generatedPostId, action_taken: 'CREATED',
           performed_by: currentUser.id, notes: `Created request group ${sharedGroupId}. Assigned: ${verifierId}`,
           action_timestamp: new Date().toISOString()
         });
+
+        // ✉️ EMAIL NOTIFICATION (Using your exact keys)
+        if (verifierData?.email) {
+          try {
+            await emailjs.send(
+              'service_tmrlwmt',    
+              'template_dq954n4',   
+              {
+                verifier_name: verifierData.full_name,
+                verifier_email: verifierData.email,
+                author_name: currentUser.full_name,
+                amount: amount,
+                category: finalCategoryString
+              },
+              'R7rTyfs6mW0RnZ5bj'    
+            );
+          } catch (emailErr) {
+            console.warn("Database saved, but email failed to send:", emailErr);
+          }
+        }
       });
 
       await Promise.all(submissionPromises);
-      toast.success(`Broadcasted to ${selectedTagUsers.length} verifiers!`);
+      toast.success('Workflow request submitted!');
+      
+      // 🛠️ REPAIRED CODE: Properly closed the try block!
       setSelectedCategories([]); setCustomCategory(''); setAmount(''); setNote(''); setSelectedTagUsers([]); setVerifierSearch('');
       fetchDashboardData();
     } catch (error) {
       toast.error(`Submission failure: ${error.message}`);
     }
-  };
+  }; // <-- This was the bracket that was accidentally deleted!
 
+  // ============================================================================
+  // 🛡️ WORKFLOW APPROVAL ENGINE (Double-Entry Ledger)
+  // ============================================================================
   const handleWorkflowAction = async (postId, status, flagColor) => {
     const customReason = reasonMap[postId] || '';
     if ((status === 'disapproved' || status === 'edit_requested') && !customReason.trim()) return toast.error('Provide a reason.');
@@ -163,7 +200,6 @@ export default function Dashboard({ currentUser }) {
         if (amountMatch && amountMatch[1]) {
           const extractedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
           
-          // 🛡️ DOUBLE-ENTRY LEDGER SYNC (Fixed)
           // 1. Give money to user
           const { data: profile } = await supabase.from('profiles').select('total_amount_claimed').eq('id', currentUser.id).maybeSingle();
           const newAmount = Number(profile?.total_amount_claimed || 0) + extractedAmount;
@@ -218,8 +254,8 @@ export default function Dashboard({ currentUser }) {
       <div className="bg-white p-4 rounded-xl shadow-xl border border-slate-100 max-w-sm">
         <h3 className="font-black text-slate-900 mb-2">Sign Out?</h3>
         <div className="flex gap-2">
-          <button onClick={() => toast.dismiss(t.id)} className="flex-1 bg-slate-100 text-slate-700 font-bold py-2 rounded-lg">Cancel</button>
-          <button onClick={async () => { toast.dismiss(t.id); await supabase.auth.signOut(); }} className="flex-1 bg-red-600 text-white font-bold py-2 rounded-lg">Confirm</button>
+          <button onClick={() => toast.dismiss(t.id)} className="flex-1 bg-slate-100 text-slate-700 font-bold py-2 rounded-lg text-xs">Cancel</button>
+          <button onClick={async () => { toast.dismiss(t.id); await supabase.auth.signOut(); }} className="flex-1 bg-red-600 text-white font-bold py-2 rounded-lg text-xs">Confirm</button>
         </div>
       </div>
     ), { duration: Infinity });
@@ -269,7 +305,7 @@ export default function Dashboard({ currentUser }) {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       
-      <div className="bg-slate-900 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 text-white">
+      <div className="bg-slate-900 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 text-white print:hidden">
         <div className="flex items-center gap-3 bg-slate-800/60 p-2 rounded-xl border border-slate-700/50">
           <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg'} referrerPolicy="no-referrer" className="w-10 h-10 rounded-full bg-white shadow" alt="" />
           <div className="text-left leading-tight min-w-0">

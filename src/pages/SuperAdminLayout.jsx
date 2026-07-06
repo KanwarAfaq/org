@@ -6,12 +6,14 @@ import CategoryManager from '../components/CategoryManager';
 import MasterWorkflowLedger from '../components/MasterWorkflowLedger';
 import MasterFinancialLedger from '../components/MasterFinancialLedger';
 import ReportGenerator from '../components/ReportGenerator';
+import PrintAll from '../components/PrintAll'; // 🆕 IMPORTED NEW COMPONENT
 import { useNavigate } from 'react-router-dom';
 
 export default function SuperAdminLayout({ currentUser }) {
   const [activeView, setActiveView] = useState('categories');
   const [allProfiles, setAllProfiles] = useState([]);
-  const navigate= useNavigate();
+  const navigate = useNavigate();
+
   useEffect(() => {
     const fetchProfiles = async () => {
       const { data } = await supabase.from('profiles').select('*').order('full_name', { ascending: true });
@@ -26,13 +28,16 @@ export default function SuperAdminLayout({ currentUser }) {
         <div className="bg-white/10 backdrop-blur-lg border border-red-500/30 p-8 rounded-3xl shadow-2xl max-w-md text-center">
           <h2 className="text-3xl font-black text-white mb-2 tracking-tight">🛑 Access Denied</h2>
           <p className="text-slate-400 mb-8 font-medium">Clearance Level: Master Admin Required.</p>
-          <button onClick={() => navigate('/')} className="...">Return to Dashboard</button>
+          {/* 🛠️ REPAIRED PLACEHOLDER CLASS */}
+          <button onClick={() => navigate('/')} className="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold px-8 py-3 rounded-xl shadow-lg transition-all w-full">
+            Return to Dashboard
+          </button>
         </div>
       </div>
     );
   }
 
-const handleSignOut = () => {
+  const handleSignOut = () => {
     toast((t) => (
       <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-sm w-full bg-slate-900 shadow-2xl rounded-2xl pointer-events-auto border border-slate-700 overflow-hidden`}>
         <div className="p-5 text-center border-b border-slate-800">
@@ -70,7 +75,10 @@ const handleSignOut = () => {
     const isActive = activeView === id;
     if (isDanger) {
       return (
-        <button onClick={() => navigate('/receipt-vault')} className="...">🗄️ Global Receipt Vault</button>
+        /* 🛠️ REPAIRED PLACEHOLDER CLASS */
+        <button onClick={() => navigate('/receipt-vault')} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-bold transition-all hover:bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group">
+          <span className="text-lg group-hover:scale-110 transition-transform">{icon}</span> {label}
+        </button>
       );
     }
     return (
@@ -81,10 +89,11 @@ const handleSignOut = () => {
   };
 
   return (
+    // 🖨️ ADDED PRINT CSS
     <div className="flex h-screen bg-slate-950 overflow-hidden font-sans text-slate-200">
       
-      {/* 🌑 MODERN GLASS SIDEBAR */}
-      <div className="w-72 bg-slate-900/50 backdrop-blur-xl border-r border-slate-800/50 flex flex-col shadow-2xl z-20">
+      {/* 🌑 MODERN GLASS SIDEBAR (Hidden during print) */}
+      <div className="w-72 bg-slate-900/50 backdrop-blur-xl border-r border-slate-800/50 flex flex-col shadow-2xl z-20 print:hidden">
         <div className="p-8 border-b border-slate-800/50">
           <div className="flex items-center gap-3 mb-1">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
@@ -95,12 +104,16 @@ const handleSignOut = () => {
           <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest pl-11">Command Center</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-6 px-4 space-y-2">
+        <div className="flex-1 overflow-y-auto py-6 px-4 space-y-2 custom-scrollbar">
           <NavButton id="categories" icon="🗂️" label="System Configuration" />
           <NavButton id="workflows" icon="📋" label="Global Workflows" />
           <NavButton id="financials" icon="🏦" label="Master Ledger" />
           <NavButton id="reports" icon="🖨️" label="Data Export Engine" />
           <NavButton id="directory" icon="👥" label="Staff Directory" />
+          
+          {/* 🆕 THE NEW PRINT ALL BUTTON */}
+          <NavButton id="printall" icon="📑" label="Print All Records" />
+
           <div className="pt-6 mt-6 border-t border-slate-800/50">
             <NavButton id="receipt_vault" icon="🗄️" label="Global Receipt Vault" isDanger={true} />
           </div>
@@ -113,27 +126,28 @@ const handleSignOut = () => {
         </div>
       </div>
 
-      {/* ☀️ MAIN CONTENT AREA */}
-      <div className="flex-1 flex flex-col relative h-full overflow-hidden bg-slate-50 text-slate-900">
+      {/* ☀️ MAIN CONTENT AREA (Clean white background for printing) */}
+      <div className="flex-1 flex flex-col relative h-full overflow-hidden bg-slate-50 text-slate-900 print:bg-white print:overflow-visible">
         
-        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 h-20 flex items-center justify-between px-10 z-10 shadow-sm shrink-0">
+        {/* HEADER (Hidden during print) */}
+        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 h-20 flex items-center justify-between px-10 z-10 shadow-sm shrink-0 print:hidden">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-xl shadow-inner">
-              {/* FIXED: Dynamic Icons for the header */}
               {activeView === 'categories' && '🗂️'}
               {activeView === 'workflows' && '📋'}
               {activeView === 'financials' && '🏦'}
               {activeView === 'reports' && '🖨️'}
               {activeView === 'directory' && '👥'}
+              {activeView === 'printall' && '📑'} {/* 🆕 ADDED ICON */}
             </div>
             <div>
               <h2 className="text-xl font-black text-slate-800 tracking-tight">
-                {/* FIXED: Removed the component from here, replaced with text */}
                 {activeView === 'categories' && 'System Configuration'}
                 {activeView === 'workflows' && 'Global Workflow Oversight'}
                 {activeView === 'financials' && 'Master Financial Ledgers'}
                 {activeView === 'reports' && 'Data Export Engine'}
                 {activeView === 'directory' && 'Staff Directory'}
+                {activeView === 'printall' && 'Master Export Engine'} {/* 🆕 ADDED TITLE */}
               </h2>
               <p className="text-xs font-bold text-slate-400 mt-0.5">Live Database Connection</p>
             </div>
@@ -148,15 +162,17 @@ const handleSignOut = () => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-10 relative">
-          <div className="max-w-7xl mx-auto pb-12 animate-fadeIn">
+        {/* MAIN BODY (Adapts to page size for printing) */}
+        <main className="flex-1 overflow-y-auto p-10 relative print:overflow-visible print:p-0">
+          <div className="max-w-7xl mx-auto pb-12 animate-fadeIn print:max-w-full print:p-0">
             {activeView === 'categories' && <CategoryManager />}
             {activeView === 'workflows' && <MasterWorkflowLedger currentUser={currentUser} />}
             {activeView === 'financials' && <MasterFinancialLedger />}
             {activeView === 'reports' && <ReportGenerator />}
-            
-            {/* FIXED: The Staff Directory component safely placed in the main body! */}
             {activeView === 'directory' && <StaffDirectory allProfiles={allProfiles} currentUser={currentUser} fetchAdminData={() => {}} />}
+            
+            {/* 🆕 RENDER THE PRINT ALL VIEW */}
+            {activeView === 'printall' && <PrintAll />}
           </div>
         </main>
       </div>
