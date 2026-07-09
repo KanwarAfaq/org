@@ -23,7 +23,11 @@ export default function App() {
       setSession(session);
       if (session) fetchAndEnsureProfile(session.user);
       else setLoading(false);
-    });
+     if (currentUser?.id) {
+    // 🏷️ This tags the subscriber profile inside OneSignal with their Supabase UUID
+    OneSignal.User.addTag("user_id", currentUser.id);
+  }
+}, [currentUser]);
 
     const initOneSignal = async () => {
       try {

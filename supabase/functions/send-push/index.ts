@@ -1,56 +1,71 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
+// 🛡️ Global CORS Headers allowed by browsers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
 serve(async (req) => {
-  // Handle CORS preflight checks instantly
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  // 1. Handle browser preflight checks
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
 
   try {
-    // 1. Grab the target user and message from React
-    const { target_user_id, heading, message } = await req.json()
+    const body = await req.json() 
+    console.log("📥 Raw Incoming Payload:", JSON.stringify(body))
+    
+    // Unify extraction whether it comes from a webhook or direct fetch
+    const data = body.record ? body.record : body;
 
-    // 2. Grab your secret OneSignal keys securely from Supabase
-    const ONESIGNAL_APP_ID = Deno.env.get('ONESIGNAL_APP_ID')
-    const ONESIGNAL_REST_API_KEY = Deno.env.get('ONESIGNAL_REST_API_KEY')
+    // 🔄 FIXED: Mapping to your actual frontend property keys!
+    const verifierId = data.target_user_id || data.verifier_id 
+    const workflowTitle = data.heading || data.title || "New Task"
+    const customMessage = data.message || `You have been assigned a new verification task.`
 
-    if (!ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) {
-       throw new Error("Missing OneSignal environment variables in Supabase!")
+    // Robust validation
+    if (!verifierId) {
+      throw new Error("Validation Error: Neither 'target_user_id' nor 'verifier_id' was found in the payload.")
     }
 
-    // 3. Fire the push notification using OneSignal's API
-    const response = await fetch('https://onesignal.com/api/v1/notifications', {
-      method: 'POST',
+    const restApiKey = Deno.env.get("ONESIGNAL_REST_API_KEY")
+    if (!restApiKey) {
+      throw new Error("Environment Error: 'ONESIGNAL_REST_API_KEY' is missing in secrets.")
+    }
+
+    // Send request to OneSignal
+    const response = await fetch("https://onesignal.com/api/v1/notifications", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Authorization': `Basic ${ONESIGNAL_REST_API_KEY}`,
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": `Basic ${restApiKey}` 
       },
       body: JSON.stringify({
-        app_id: ONESIGNAL_APP_ID,
-        include_aliases: {
-          external_id: [target_user_id] // This perfectly matches the OneSignal.login() in your App.jsx!
-        },
-        target_channel: "push",
-        headings: { en: heading },
-        contents: { en: message },
+        app_id: "b572881a-d9f6-4c75-a6c1-84a815108921",
+        headings: { "en": workflowTitle }, // 📋 Displays: "New Workflow Assigned 📋"
+        contents: { "en": customMessage },  // 💬 Displays the custom message with request details
+        filters: [
+          { "field": "tag", "key": "user_id", "relation": "=", "value": verifierId }
+        ]
       }),
     })
 
-    const data = await response.json()
-
-    // 4. Tell React it was successful
-    return new Response(JSON.stringify(data), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    })
+    const result = await response.json()
+    console.log("🚀 OneSignal API Response:", JSON.stringify(result))
     
+    return new Response(JSON.stringify({ success: true, onesignal: result }), { 
+      status: 200, 
+      headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    })
+
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
+    // ... keep your existing catch block headers identical
+    console.error("❌ Function Error Log:", error.message)
+    return new Response(JSON.stringify({ error: error.message }), { 
+      status: 400, 
+      headers: { ...corsHeaders, "Content-Type": "application/json" } 
     })
   }
 })
