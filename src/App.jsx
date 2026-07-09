@@ -32,8 +32,8 @@ export default function App() {
           return;
         }
         await OneSignal.init({
-          appId: "b572881a-d9f6-4c75-a6c1-84a815108921", 
-          allowLocalhostAsSecureOrigin: true, 
+         appId: "b572881a-d9f6-4c75-a6c1-84a815108921", 
+  allowLocalhostAsSecureOrigin: true,
         });
         setIsOneSignalReady(true);
         OneSignal.Slidedown.promptPush();
