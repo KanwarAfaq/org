@@ -6,20 +6,30 @@ import CategoryManager from '../components/CategoryManager';
 import MasterWorkflowLedger from '../components/MasterWorkflowLedger';
 import MasterFinancialLedger from '../components/MasterFinancialLedger';
 import ReportGenerator from '../components/ReportGenerator';
-import PrintAll from '../components/PrintAll'; // 🆕 IMPORTED NEW COMPONENT
+import PrintAll from '../components/PrintAll'; 
 import { useNavigate } from 'react-router-dom';
+import StaffProfiles from './StaffProfiles';
 
 export default function SuperAdminLayout({ currentUser }) {
   const [activeView, setActiveView] = useState('categories');
   const [allProfiles, setAllProfiles] = useState([]);
   const navigate = useNavigate();
 
+  const fetchProfiles = async () => {
+    const { data } = await supabase.from('profiles').select('*').order('full_name', { ascending: true });
+    if (data) setAllProfiles(data);
+  };
+
   useEffect(() => {
-    const fetchProfiles = async () => {
-      const { data } = await supabase.from('profiles').select('*').order('full_name', { ascending: true });
-      if (data) setAllProfiles(data);
-    };
-    fetchProfiles();
+    fetchProfiles(); // Initial load
+
+    // 📡 LIVE LISTENER: Instantly refetch if an admin toggles a user
+    const profileChannel = supabase.channel('super-admin-profiles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+         fetchProfiles();
+      }).subscribe();
+
+    return () => supabase.removeChannel(profileChannel);
   }, []);
 
   if (!currentUser?.is_super_admin) {
@@ -28,7 +38,6 @@ export default function SuperAdminLayout({ currentUser }) {
         <div className="bg-white/10 backdrop-blur-lg border border-red-500/30 p-8 rounded-3xl shadow-2xl max-w-md text-center">
           <h2 className="text-3xl font-black text-white mb-2 tracking-tight">🛑 Access Denied</h2>
           <p className="text-slate-400 mb-8 font-medium">Clearance Level: Master Admin Required.</p>
-          {/* 🛠️ REPAIRED PLACEHOLDER CLASS */}
           <button onClick={() => navigate('/')} className="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold px-8 py-3 rounded-xl shadow-lg transition-all w-full">
             Return to Dashboard
           </button>
@@ -75,7 +84,6 @@ export default function SuperAdminLayout({ currentUser }) {
     const isActive = activeView === id;
     if (isDanger) {
       return (
-        /* 🛠️ REPAIRED PLACEHOLDER CLASS */
         <button onClick={() => navigate('/receipt-vault')} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-bold transition-all hover:bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group">
           <span className="text-lg group-hover:scale-110 transition-transform">{icon}</span> {label}
         </button>
@@ -89,7 +97,6 @@ export default function SuperAdminLayout({ currentUser }) {
   };
 
   return (
-    // 🖨️ ADDED PRINT CSS
     <div className="flex h-screen bg-slate-950 overflow-hidden font-sans text-slate-200">
       
       {/* 🌑 MODERN GLASS SIDEBAR (Hidden during print) */}
@@ -99,7 +106,7 @@ export default function SuperAdminLayout({ currentUser }) {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
               <span className="text-white text-sm font-black">⚡</span>
             </div>
-            <h1 className="text-xl font-black text-white tracking-tight">GOD MODE</h1>
+            <h1 className="text-xl font-black text-white tracking-tight"> SUPER ADMIN  </h1>
           </div>
           <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest pl-11">Command Center</p>
         </div>
@@ -109,9 +116,15 @@ export default function SuperAdminLayout({ currentUser }) {
           <NavButton id="workflows" icon="📋" label="Global Workflows" />
           <NavButton id="financials" icon="🏦" label="Master Ledger" />
           <NavButton id="reports" icon="🖨️" label="Data Export Engine" />
-          <NavButton id="directory" icon="👥" label="Staff Directory" />
           
-          {/* 🆕 THE NEW PRINT ALL BUTTON */}
+          <div className="my-2 border-t border-slate-800/50"></div>
+          
+          <NavButton id="directory" icon="👥" label="Staff Directory" />
+          {/* 🚀 ADDED STAFF PROFILES NAV BUTTON */}
+          <NavButton id="staff" icon="🧑‍💻" label="Manage Roles & Access" />
+          
+          <div className="my-2 border-t border-slate-800/50"></div>
+
           <NavButton id="printall" icon="📑" label="Print All Records" />
 
           <div className="pt-6 mt-6 border-t border-slate-800/50">
@@ -138,7 +151,8 @@ export default function SuperAdminLayout({ currentUser }) {
               {activeView === 'financials' && '🏦'}
               {activeView === 'reports' && '🖨️'}
               {activeView === 'directory' && '👥'}
-              {activeView === 'printall' && '📑'} {/* 🆕 ADDED ICON */}
+              {activeView === 'staff' && '🧑‍💻'} {/* 🚀 ADDED ICON */}
+              {activeView === 'printall' && '📑'} 
             </div>
             <div>
               <h2 className="text-xl font-black text-slate-800 tracking-tight">
@@ -147,14 +161,24 @@ export default function SuperAdminLayout({ currentUser }) {
                 {activeView === 'financials' && 'Master Financial Ledgers'}
                 {activeView === 'reports' && 'Data Export Engine'}
                 {activeView === 'directory' && 'Staff Directory'}
-                {activeView === 'printall' && 'Master Export Engine'} {/* 🆕 ADDED TITLE */}
+                {activeView === 'staff' && 'Employee Access & Roles'} {/* 🚀 ADDED TITLE */}
+                {activeView === 'printall' && 'Master Export Engine'} 
               </h2>
               <p className="text-xs font-bold text-slate-400 mt-0.5">Live Database Connection</p>
             </div>
           </div>
           
           <div className="flex items-center gap-4 bg-slate-50 p-2 pr-4 rounded-full border border-slate-200 shadow-sm">
-            <img src={currentUser?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.full_name || 'U')}&background=0f172a&color=38bdf8&rounded=true&bold=true`} referrerPolicy="no-referrer" className="w-10 h-10 rounded-full bg-white shadow-sm" alt="Admin" />
+            <img 
+              src={currentUser?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.full_name || 'U')}&background=0f172a&color=38bdf8&rounded=true&bold=true`} 
+              onError={(e) => {
+                e.target.onerror = null; 
+                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.full_name || 'U')}&background=0f172a&color=38bdf8&rounded=true&bold=true`;
+              }}
+              referrerPolicy="no-referrer" 
+              className="w-10 h-10 rounded-full bg-white shadow-sm" 
+              alt="Admin" 
+            />
             <div className="text-left">
               <p className="text-sm font-black text-slate-900 leading-tight">{currentUser.full_name}</p>
               <p className="text-[10px] text-blue-600 font-black uppercase tracking-widest mt-0.5">Super Admin</p>
@@ -169,9 +193,11 @@ export default function SuperAdminLayout({ currentUser }) {
             {activeView === 'workflows' && <MasterWorkflowLedger currentUser={currentUser} />}
             {activeView === 'financials' && <MasterFinancialLedger />}
             {activeView === 'reports' && <ReportGenerator />}
-            {activeView === 'directory' && <StaffDirectory allProfiles={allProfiles} currentUser={currentUser} fetchAdminData={() => {}} />}
+            {activeView === 'directory' && <StaffDirectory allProfiles={allProfiles} currentUser={currentUser} fetchAdminData={fetchProfiles} />}
             
-            {/* 🆕 RENDER THE PRINT ALL VIEW */}
+            {/* 🚀 RENDER THE NEW STAFF PROFILES COMPONENT */}
+            {activeView === 'staff' && <StaffProfiles currentUser={currentUser} />}
+            
             {activeView === 'printall' && <PrintAll />}
           </div>
         </main>

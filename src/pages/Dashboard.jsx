@@ -35,6 +35,7 @@ export default function Dashboard({ currentUser }) {
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public' }, () => {
           fetchDashboardData(); 
+          fetchUsers(); 
       }).subscribe();
 
     return () => supabase.removeChannel(workflowChannel);
@@ -53,7 +54,13 @@ export default function Dashboard({ currentUser }) {
   };
 
   const fetchUsers = async () => {
-    const { data } = await supabase.from('profiles').select('id, full_name, email').neq('id', currentUser.id).order('full_name', { ascending: true });
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .neq('id', currentUser.id)
+      .eq('is_active', true) 
+      .order('full_name', { ascending: true });
+    
     if (data) setAllUsers(data);
   };
 
@@ -100,9 +107,6 @@ export default function Dashboard({ currentUser }) {
   const handleToggleCategory = (catName) => setSelectedCategories(prev => prev.includes(catName) ? prev.filter(c => c !== catName) : [...prev, catName]);
   const handleToggleVerifierCheckbox = (userId) => setSelectedTagUsers(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
 
-  // ============================================================================
-  // 🚀 CREATION & EMAIL NOTIFICATION ENGINE
-  // ============================================================================
   const handleCreatePost = async (e) => {
     e.preventDefault();
     if (selectedTagUsers.length === 0) return toast.error('Assign at least one verifier.');
@@ -122,8 +126,6 @@ export default function Dashboard({ currentUser }) {
       const submissionPromises = selectedTagUsers.map(async (verifierId) => {
         const generatedPostId = crypto.randomUUID();
         const groupTrackingToken = `GROUP_ID:${sharedGroupId}`;
-        
-        // Find the specific user we are tagging to get their email address
         const verifierData = allUsers.find(u => u.id === verifierId);
 
         const { error: postError } = await supabase.from('posts').insert({
@@ -140,7 +142,6 @@ export default function Dashboard({ currentUser }) {
           action_timestamp: new Date().toISOString()
         });
 
-        // ✉️ EMAIL NOTIFICATION (Using your exact keys)
         if (verifierData?.email) {
           try {
             await emailjs.send(
@@ -159,22 +160,30 @@ export default function Dashboard({ currentUser }) {
             console.warn("Database saved, but email failed to send:", emailErr);
           }
         }
+
+        try {
+          await supabase.functions.invoke('send-push', {
+            body: {
+              target_user_id: verifierId, 
+              heading: "New Workflow Assigned 📋",
+              message: `${currentUser.full_name} has requested $${amount} for ${finalCategoryString}.`
+            }
+          });
+        } catch (pushErr) {
+          console.warn("Database saved, but push notification failed:", pushErr);
+        }
       });
 
       await Promise.all(submissionPromises);
       toast.success('Workflow request submitted!');
       
-      // 🛠️ REPAIRED CODE: Properly closed the try block!
       setSelectedCategories([]); setCustomCategory(''); setAmount(''); setNote(''); setSelectedTagUsers([]); setVerifierSearch('');
       fetchDashboardData();
     } catch (error) {
       toast.error(`Submission failure: ${error.message}`);
     }
-  }; // <-- This was the bracket that was accidentally deleted!
+  }; 
 
-  // ============================================================================
-  // 🛡️ WORKFLOW APPROVAL ENGINE (Double-Entry Ledger)
-  // ============================================================================
   const handleWorkflowAction = async (postId, status, flagColor) => {
     const customReason = reasonMap[postId] || '';
     if ((status === 'disapproved' || status === 'edit_requested') && !customReason.trim()) return toast.error('Provide a reason.');
@@ -200,19 +209,16 @@ export default function Dashboard({ currentUser }) {
         if (amountMatch && amountMatch[1]) {
           const extractedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
           
-          // 1. Give money to user
-          const { data: profile } = await supabase.from('profiles').select('total_amount_claimed').eq('id', currentUser.id).maybeSingle();
+          const { data: profile } = await supabase.from('profiles').select('total_amount_claimed').eq('id', targetPost.author_id).maybeSingle();
           const newAmount = Number(profile?.total_amount_claimed || 0) + extractedAmount;
-          await supabase.from('profiles').update({ total_amount_claimed: newAmount }).eq('id', currentUser.id);
+          await supabase.from('profiles').update({ total_amount_claimed: newAmount }).eq('id', targetPost.author_id);
           
-          // 2. Deduct money from Company Treasury
           const { data: treasury } = await supabase.from('company_treasury').select('total_initial_budget').eq('id', 1).maybeSingle();
           const newTreasury = Number(treasury?.total_initial_budget || 0) - extractedAmount;
           await supabase.from('company_treasury').update({ total_initial_budget: newTreasury }).eq('id', 1);
 
-          // 3. Write personal ledger
           await supabase.from('member_wallet_logs').insert({
-            id: crypto.randomUUID(), member_id: currentUser.id, post_id: postId,
+            id: crypto.randomUUID(), member_id: targetPost.author_id, post_id: postId,
             prev_amount: profile?.total_amount_claimed || 0, delta_amount: extractedAmount, new_amount: newAmount,
             notes: `Workflow Approved: ${targetPost?.content.split(' || ')[0]}`, action_timestamp: new Date().toISOString()
           });
@@ -235,6 +241,28 @@ export default function Dashboard({ currentUser }) {
       });
 
       toast.success('Workflow processed.');
+
+      // =========================================================================
+      // 📱 PUSH NOTIFICATION: SEND UPDATE BACK TO ORIGINAL AUTHOR
+      // =========================================================================
+      if (targetPost?.author_id) {
+        try {
+          // Format status beautifully for the pop-up
+          let friendlyStatus = status === 'disapproved' ? 'Denied' : (status === 'edit_requested' ? 'Flagged for Edit' : 'Approved');
+          
+          await supabase.functions.invoke('send-push', {
+            body: {
+              target_user_id: targetPost.author_id, 
+              heading: `Workflow ${friendlyStatus} 🔔`,
+              message: `${currentUser.full_name} has ${friendlyStatus.toLowerCase()} your workflow request.`
+            }
+          });
+        } catch (pushErr) {
+          console.warn("Push notification back to author failed:", pushErr);
+        }
+      }
+      // =========================================================================
+
       fetchDashboardData();
     } catch (err) {
       toast.error(`Transaction Failed: ${err.message}`);
@@ -246,6 +274,9 @@ export default function Dashboard({ currentUser }) {
     await supabase.from('posts').update({ content: updatedContent, status: 'pending', flag_color: 'none', action_reason: null, updated_at: new Date().toISOString() }).eq('id', postId);
     await supabase.from('audit_logs').insert({ id: crypto.randomUUID(), post_id: postId, action_taken: 'RE-SUBMITTED', performed_by: currentUser.id, notes: 'Author revised content.', action_timestamp: new Date().toISOString() });
     toast.success('Revised post sent!');
+    
+    // 📱 Push logic could also be added here to re-notify the verifier if desired
+    
     fetchDashboardData();
   };
 
@@ -312,6 +343,7 @@ export default function Dashboard({ currentUser }) {
             <p className="text-xs font-black text-slate-100 truncate">{currentUser?.full_name || 'System Member'}</p>
             <p className="text-[10px] font-medium text-slate-400 truncate mt-0.5">{currentUser?.email || 'Active verified session'}</p>
           </div>
+          <button onClick={() => navigate('/edit-profile')} className="text-[10px] font-bold bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded-lg transition-colors border border-slate-700">Edit Profile</button>
         </div>
 
        <div className="flex flex-wrap items-center gap-2">
