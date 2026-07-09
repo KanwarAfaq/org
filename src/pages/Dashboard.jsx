@@ -4,6 +4,7 @@ import WalletProfile from './WalletProfile';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import emailjs from '@emailjs/browser';
+import OneSignal from 'react-onesignal'; // 📱 Import OneSignal library core
 
 export default function Dashboard({ currentUser }) {
   const navigate = useNavigate();
@@ -24,6 +25,32 @@ export default function Dashboard({ currentUser }) {
   const [loading, setLoading] = useState(true);
   const [reasonMap, setReasonMap] = useState({});
   const [editContentMap, setEditContentMap] = useState({});
+
+  // =========================================================================
+  // 🏷️ ONESIGNAL DEVICE REGISTRATION LIFECYCLE HANDLER
+  // =========================================================================
+  useEffect(() => {
+    const initializePushNotifications = async () => {
+      if (!currentUser?.id) return;
+
+      try {
+        // 1. Fire up the core push routing engine
+        await OneSignal.init({
+          appId: "b572881a-d9f6-4c75-a6c1-84a815108921",
+          allowLocalhostAsSecureOrigin: true, // Crucial for your local sandbox testing
+        });
+
+        // 2. Slap the unique Supabase UUID onto this specific browser session
+        await OneSignal.User.addTag("user_id", currentUser.id);
+        console.log("✅ Device mapped securely to user_id profile tag:", currentUser.id);
+      } catch (err) {
+        console.warn("⚠️ OneSignal sync initialization paused:", err.message);
+      }
+    };
+
+    initializePushNotifications();
+  }, [currentUser?.id]);
+  // =========================================================================
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -242,12 +269,8 @@ export default function Dashboard({ currentUser }) {
 
       toast.success('Workflow processed.');
 
-      // =========================================================================
-      // 📱 PUSH NOTIFICATION: SEND UPDATE BACK TO ORIGINAL AUTHOR
-      // =========================================================================
       if (targetPost?.author_id) {
         try {
-          // Format status beautifully for the pop-up
           let friendlyStatus = status === 'disapproved' ? 'Denied' : (status === 'edit_requested' ? 'Flagged for Edit' : 'Approved');
           
           await supabase.functions.invoke('send-push', {
@@ -261,7 +284,6 @@ export default function Dashboard({ currentUser }) {
           console.warn("Push notification back to author failed:", pushErr);
         }
       }
-      // =========================================================================
 
       fetchDashboardData();
     } catch (err) {
@@ -274,9 +296,6 @@ export default function Dashboard({ currentUser }) {
     await supabase.from('posts').update({ content: updatedContent, status: 'pending', flag_color: 'none', action_reason: null, updated_at: new Date().toISOString() }).eq('id', postId);
     await supabase.from('audit_logs').insert({ id: crypto.randomUUID(), post_id: postId, action_taken: 'RE-SUBMITTED', performed_by: currentUser.id, notes: 'Author revised content.', action_timestamp: new Date().toISOString() });
     toast.success('Revised post sent!');
-    
-    // 📱 Push logic could also be added here to re-notify the verifier if desired
-    
     fetchDashboardData();
   };
 
@@ -368,7 +387,6 @@ export default function Dashboard({ currentUser }) {
         <div className="animate-fadeIn"><WalletProfile currentUser={currentUser} /></div>
       ) : (
         <div className="space-y-8 animate-fadeIn">
-          {/* NEW SUBMISSION FORM */}
           <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
             <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">📊 New Workflow Submission</h3>
             <form onSubmit={handleCreatePost} className="space-y-6">
@@ -461,7 +479,6 @@ export default function Dashboard({ currentUser }) {
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* INBOX */}
               <div className="space-y-4">
                 <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📥 ACTION REQUIRED BY YOU</h3>
                 {inboxPosts.filter(p => p.status === 'pending').length === 0 ? (
@@ -488,7 +505,6 @@ export default function Dashboard({ currentUser }) {
                 )}
               </div>
 
-              {/* OUTBOX */}
               <div className="space-y-4">
                 <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📤 YOUR TRACKING LOG</h3>
                 {processedOutboxItems.length === 0 ? <p className="text-sm text-slate-400 bg-white border rounded-xl p-6 text-center shadow-inner">No submissions logged.</p> : processedOutboxItems.map(post => (
