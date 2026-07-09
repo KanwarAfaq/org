@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
-export default function EditProfile({ currentUser, refreshProfile }) { // ⬅️ Add it here
+export default function EditProfile({ currentUser, refreshProfile }) {
   const navigate = useNavigate();
   const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME; 
   const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET; 
@@ -20,13 +20,10 @@ export default function EditProfile({ currentUser, refreshProfile }) { // ⬅️
   const otpRefs = useRef([]);
 
   useEffect(() => {
-    // 🚀 THE FIX: Only populate the form if we are NOT in the middle of verifying an OTP!
-    // This stops React from overwriting your new text with the old database data.
+    // Only lock form data updates from parent state if we aren't mid-verification
     if (currentUser && !isVerifyingOtp) {
       setFormData({
-        fullName: currentUser.full_name || '', 
-        phone: currentUser.phone || '', 
-        address: currentUser.address || ''
+        fullName: currentUser.full_name || '', phone: currentUser.phone || '', address: currentUser.address || ''
       });
       setPreviewUrl(currentUser.avatar_url || null);
     }
@@ -51,18 +48,23 @@ export default function EditProfile({ currentUser, refreshProfile }) { // ⬅️
   };
 
   // ==========================================
-  // 🔐 TRIGGER OTP FOR PROFILE CHANGES
+  // 🔐 TRIGGER OTP VIA SUPABASE AUTH (FREE)
   // ==========================================
   const handleInitiateSave = async (e) => {
     e.preventDefault();
     setIsSaving(true);
     
     try {
-      // Send OTP to their current email as an identity check
-      const { error } = await supabase.auth.signInWithOtp({ email: currentUser.email });
+      // 🚀 FIXED: We are routing this entirely through Supabase native OTP infrastructure now
+      const { error } = await supabase.auth.signInWithOtp({ 
+        email: currentUser.email,
+        options: {
+          shouldCreateUser: false // Strictly verify existing account profile identity
+        }
+      });
       if (error) throw error;
 
-      toast.success("Security Check: Code sent to your email.");
+      toast.success("Security Check: 6-digit code dispatched via Supabase.");
       setOtp(['', '', '', '', '', '']);
       setCountdown(120);
       setIsVerifyingOtp(true);
@@ -83,9 +85,11 @@ export default function EditProfile({ currentUser, refreshProfile }) { // ⬅️
     
     setIsSaving(true);
     try {
-      // 1. Verify Identity (Changed type to 'magiclink')
+      // 1. Verify Identity against native token entry
       const { error: verifyError } = await supabase.auth.verifyOtp({
-        email: currentUser.email, token: otpCode, type: 'magiclink'
+        email: currentUser.email, 
+        token: otpCode, 
+        type: 'magiclink' // Utilizes your optimized token templates in Supabase console
       });
       if (verifyError) throw verifyError;
 
@@ -103,7 +107,7 @@ export default function EditProfile({ currentUser, refreshProfile }) { // ⬅️
         finalAvatarUrl = cloudData.secure_url;
       }
 
-    // 3. Update Database
+      // 3. Update Database & force throw on failure rows
       const { error: dbError } = await supabase.from('profiles').update({
         full_name: formData.fullName, 
         phone: formData.phone, 
@@ -118,13 +122,10 @@ export default function EditProfile({ currentUser, refreshProfile }) { // ⬅️
 
       toast.success("Profile verified and updated successfully!");
       
-      // 🚀 THE REACT WAY: Ask App.jsx to update its state, THEN smoothly route back!
       if (refreshProfile) {
-        await refreshProfile(); 
+        await refreshProfile();
       }
-      
-      navigate('/'); // Smooth SPA routing restored!
-
+      navigate('/'); 
     } catch (error) {
       toast.error(`Update Error: ${error.message}`);
     } finally {
@@ -154,7 +155,7 @@ export default function EditProfile({ currentUser, refreshProfile }) { // ⬅️
     try {
       const { error } = await supabase.auth.signInWithOtp({ email: currentUser.email });
       if (error) throw error;
-      toast.success("A new OTP has been sent to your email.");
+      toast.success("A new secure code has been generated.");
       setCountdown(120);
     } catch (err) { toast.error(`Resend Failed: ${err.message}`); } 
     finally { setIsSaving(false); }
