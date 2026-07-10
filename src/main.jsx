@@ -6,7 +6,7 @@ import { CapacitorUpdater } from '@capgo/capacitor-updater'
 import { App as NativeApp } from '@capacitor/app'
 import { supabase } from './supabaseClient'
 
-CapacitorUpdater.notifyAppReady();
+CapacitorUpdater.notifyAppReady({ channel: "production" });
 
 // 🚀 Intercept custom deep links coming back from mobile Google Browser login
 NativeApp.addListener('appUrlOpen', async (event) => {
