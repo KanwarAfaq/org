@@ -4,7 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
-CapacitorUpdater.notifyAppReady();
+//CapacitorUpdater.notifyAppReady();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
