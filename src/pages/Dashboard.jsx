@@ -50,8 +50,15 @@ export default function Dashboard({ currentUser }) {
       }).subscribe();
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     const initializePushNotifications = async () => {
       try {
+=======
+    // 2. Initialize OneSignal and Force Synchronous Tagging
+    const initializePushNotifications = async () => {
+      try {
+        // Init the SDK if it hasn't been initialized yet
+>>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
 =======
     // 2. Initialize OneSignal and Force Synchronous Tagging
     const initializePushNotifications = async () => {
@@ -67,13 +74,19 @@ export default function Dashboard({ currentUser }) {
         }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         await OneSignal.login(currentUser.id); 
         await OneSignal.User.addTag("user_id", currentUser.id); 
 =======
+=======
+>>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
         // 🚀 THE FIX: Explicitly login the user and set the user_id tag every time the ID loads!
         await OneSignal.login(currentUser.id); // Sets the External ID field automatically
         await OneSignal.User.addTag("user_id", currentUser.id); // Sets the Data Tag field
         
+<<<<<<< HEAD
+>>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
+=======
 >>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
         console.log("🎯 OneSignal successfully synchronized for ID:", currentUser.id);
       } catch (err) {
@@ -90,8 +103,11 @@ export default function Dashboard({ currentUser }) {
       supabase.removeChannel(workflowChannel);
     };
 <<<<<<< HEAD
+<<<<<<< HEAD
   }, [currentUser?.id]);
 =======
+=======
+>>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
   }, [currentUser?.id]); // Fires immediately when currentUser log-in data becomes available!
   // =========================================================================d]); // 🚀 Safe dependency! __oneSignalInitialized will protect against infinite loops
   // =========================================================================
