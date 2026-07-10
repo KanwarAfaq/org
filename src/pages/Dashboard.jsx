@@ -26,34 +26,15 @@ export default function Dashboard({ currentUser }) {
   const [reasonMap, setReasonMap] = useState({});
   const [editContentMap, setEditContentMap] = useState({});
 
+
+ // =========================================================================
+// =========================================================================
+  // ⚡ UNIFIED LIFECYCLE: DATA SYNC & SECURE PUSH REGISTRATION
   // =========================================================================
-  // 🏷️ ONESIGNAL DEVICE REGISTRATION LIFECYCLE HANDLER
-  // =========================================================================
-  useEffect(() => {
-    const initializePushNotifications = async () => {
-      if (!currentUser?.id) return;
-
-      try {
-        // 1. Fire up the core push routing engine
-        await OneSignal.init({
-          appId: "b572881a-d9f6-4c75-a6c1-84a815108921",
-          allowLocalhostAsSecureOrigin: true, // Crucial for your local sandbox testing
-        });
-
-        // 2. Slap the unique Supabase UUID onto this specific browser session
-        await OneSignal.User.addTag("user_id", currentUser.id);
-        console.log("✅ Device mapped securely to user_id profile tag:", currentUser.id);
-      } catch (err) {
-        console.warn("⚠️ OneSignal sync initialization paused:", err.message);
-      }
-    };
-
-    initializePushNotifications();
-  }, [currentUser?.id]);
-  // =========================================================================
-
   useEffect(() => {
     if (!currentUser?.id) return;
+
+    // 1. Core Data Fetching & Realtime Subscriptions
     fetchUsers();
     fetchActiveCategories();
     fetchDashboardData();
@@ -65,8 +46,35 @@ export default function Dashboard({ currentUser }) {
           fetchUsers(); 
       }).subscribe();
 
-    return () => supabase.removeChannel(workflowChannel);
-  }, [currentUser?.id]);
+    // 2. Safely Initialize OneSignal Device Hook (Only if not already initialized)
+    const initializePushNotifications = async () => {
+      // Check window property to ensure we never run .init() multiple times on this session
+      if (window.__oneSignalInitialized) return;
+
+      try {
+        window.__oneSignalInitialized = true; // Mark as running globally on the browser tab
+
+        await OneSignal.init({
+          appId: "b572881a-d9f6-4c75-a6c1-84a815108921",
+          allowLocalhostAsSecureOrigin: true, 
+        });
+
+        await OneSignal.User.addTag("user_id", currentUser.id);
+        console.log("✅ Device mapped securely to user_id profile tag:", currentUser.id);
+      } catch (err) {
+        console.warn("⚠️ OneSignal sync initialization paused:", err.message);
+        window.__oneSignalInitialized = false; // Reset on failure so it can retry safely
+      }
+    };
+
+    initializePushNotifications();
+
+    // Cleanup subscription channel on unmount
+    return () => {
+      supabase.removeChannel(workflowChannel);
+    };
+  }, [currentUser?.id]); // 🚀 Safe dependency! __oneSignalInitialized will protect against infinite loops
+  // =========================================================================
 
   const fetchActiveCategories = async () => {
     const { data } = await supabase.from('workflow_categories').select('*').eq('is_active', true).order('created_at', { ascending: true });
