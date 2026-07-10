@@ -320,7 +320,7 @@ export default function Dashboard({ currentUser }) {
     return (
       <div className="space-y-2">
         <p className="text-slate-700 font-medium text-xs md:text-sm">{parts[0]}</p>
-        {parts[1] && <p className="text-xs bg-amber-50 text-amber-800 border-l-4 border-amber-500 p-2.5 rounded-r-md font-sans">💡 {parts[1]}</p>}
+        {parts[1] && <p className="text-xs bg-amber-50 text-amber-800 border-l-4 border-amber-500 p-2.5 rounded-r-md font-sans">💡  {parts[1]}</p>}
       </div>
     );
   };

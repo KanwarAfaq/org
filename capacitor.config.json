@@ -9,5 +9,8 @@
       "disableAutoUpdateOnDev": true,
       "development": false
     }
+  },
+  "server": {
+    "androidScheme": "orgapp"
   }
 }
