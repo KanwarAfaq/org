@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   push:
     branches:
-      - main  # Triggers the compiler automatically when you push to main
+      - main
 
 jobs:
   build:
@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22  # 🚀 THE CRUCIAL FIX: Upgraded from 20 to 22!
           cache: 'npm'
 
       - name: Install Dependencies
