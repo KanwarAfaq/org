@@ -47,12 +47,16 @@ export default function Dashboard({ currentUser }) {
       }).subscribe();
 
     // 2. Safely Initialize OneSignal Device Hook (Only if not already initialized)
+    // 2. Safely Initialize OneSignal Device Hook (Only if not already initialized)
     const initializePushNotifications = async () => {
-      // Check window property to ensure we never run .init() multiple times on this session
-      if (window.__oneSignalInitialized) return;
+      // Hard check native OneSignal state before doing anything
+      if (window.__oneSignalInitialized || OneSignal.initialized) {
+        window.__oneSignalInitialized = true;
+        return; 
+      }
 
       try {
-        window.__oneSignalInitialized = true; // Mark as running globally on the browser tab
+        window.__oneSignalInitialized = true;
 
         await OneSignal.init({
           appId: "b572881a-d9f6-4c75-a6c1-84a815108921",
@@ -62,8 +66,16 @@ export default function Dashboard({ currentUser }) {
         await OneSignal.User.addTag("user_id", currentUser.id);
         console.log("✅ Device mapped securely to user_id profile tag:", currentUser.id);
       } catch (err) {
-        console.warn("⚠️ OneSignal sync initialization paused:", err.message);
-        window.__oneSignalInitialized = false; // Reset on failure so it can retry safely
+        // Unpack the error safely whether it's an Object or a raw String
+        const errorString = err?.message || String(err);
+
+        // Quietly exit if it's just an initialization race condition
+        if (errorString.includes("already initialized")) {
+          return;
+        }
+        
+        console.warn("⚠️ OneSignal sync initialization paused:", errorString);
+        window.__oneSignalInitialized = false; // Reset on true crash
       }
     };
 
