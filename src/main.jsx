@@ -5,7 +5,7 @@ import App from './App.jsx'
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
 //CapacitorUpdater.notifyAppReady();
-
+CapacitorUpdater.notifyAppReady({ development: false });
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />
