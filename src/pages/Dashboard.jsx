@@ -4,7 +4,7 @@ import WalletProfile from './WalletProfile';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import emailjs from '@emailjs/browser';
-import OneSignal from 'react-onesignal'; // 📱 Import OneSignal library core
+import OneSignal from 'react-onesignal'; 
 
 export default function Dashboard({ currentUser }) {
   const navigate = useNavigate();
@@ -26,15 +26,9 @@ export default function Dashboard({ currentUser }) {
   const [reasonMap, setReasonMap] = useState({});
   const [editContentMap, setEditContentMap] = useState({});
 
-
- // =========================================================================
-// =========================================================================
-  // ⚡ UNIFIED LIFECYCLE: DATA SYNC & SECURE PUSH REGISTRATION
-  // =========================================================================
   useEffect(() => {
     if (!currentUser?.id) return;
 
-    // 1. Core Data Fetching & Realtime Subscriptions
     fetchUsers();
     fetchActiveCategories();
     fetchDashboardData();
@@ -46,35 +40,33 @@ export default function Dashboard({ currentUser }) {
           fetchUsers(); 
       }).subscribe();
 
-    // 2. Safely Initialize OneSignal Device Hook (Only if not already initialized)
     const initializePushNotifications = async () => {
-      // Check window property to ensure we never run .init() multiple times on this session
-      if (window.__oneSignalInitialized) return;
-
       try {
-        window.__oneSignalInitialized = true; // Mark as running globally on the browser tab
+        if (!window.__oneSignalInitialized && !OneSignal.initialized) {
+          window.__oneSignalInitialized = true;
+          await OneSignal.init({
+            appId: "b572881a-d9f6-4c75-a6c1-84a815108921",
+            allowLocalhostAsSecureOrigin: true, 
+          });
+        }
 
-        await OneSignal.init({
-          appId: "b572881a-d9f6-4c75-a6c1-84a815108921",
-          allowLocalhostAsSecureOrigin: true, 
-        });
-
-        await OneSignal.User.addTag("user_id", currentUser.id);
-        console.log("✅ Device mapped securely to user_id profile tag:", currentUser.id);
+        await OneSignal.login(currentUser.id); 
+        await OneSignal.User.addTag("user_id", currentUser.id); 
+        console.log("🎯 OneSignal successfully synchronized for ID:", currentUser.id);
       } catch (err) {
-        console.warn("⚠️ OneSignal sync initialization paused:", err.message);
-        window.__oneSignalInitialized = false; // Reset on failure so it can retry safely
+        const errorString = err?.message || String(err);
+        if (!errorString.includes("already initialized")) {
+          console.warn("⚠️ OneSignal tag matching paused:", errorString);
+        }
       }
     };
 
     initializePushNotifications();
 
-    // Cleanup subscription channel on unmount
     return () => {
       supabase.removeChannel(workflowChannel);
     };
-  }, [currentUser?.id]); // 🚀 Safe dependency! __oneSignalInitialized will protect against infinite loops
-  // =========================================================================
+  }, [currentUser?.id]);
 
   const fetchActiveCategories = async () => {
     const { data } = await supabase.from('workflow_categories').select('*').eq('is_active', true).order('created_at', { ascending: true });
@@ -299,6 +291,10 @@ export default function Dashboard({ currentUser }) {
     }
   };
 
+  const handleUpdateContentMap = (id, value) => {
+    setEditContentMap(prev => ({ ...prev, [id]: value }));
+  };
+
   const handleResubmitPost = async (postId, updatedContent) => {
     if (!updatedContent?.trim()) return toast.error('Content cannot be blank.');
     await supabase.from('posts').update({ content: updatedContent, status: 'pending', flag_color: 'none', action_reason: null, updated_at: new Date().toISOString() }).eq('id', postId);
@@ -323,14 +319,14 @@ export default function Dashboard({ currentUser }) {
     const parts = fullContent.split(' || ');
     return (
       <div className="space-y-2">
-        <p className="text-slate-700 font-medium">{parts[0]}</p>
+        <p className="text-slate-700 font-medium text-xs md:text-sm">{parts[0]}</p>
         {parts[1] && <p className="text-xs bg-amber-50 text-amber-800 border-l-4 border-amber-500 p-2.5 rounded-r-md font-sans">💡 {parts[1]}</p>}
       </div>
     );
   };
 
   const getFlagBadge = (status, color) => {
-    const base = "text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ";
+    const base = "text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ";
     if (status === 'deactivated') return base + "bg-slate-100 text-slate-500 border border-slate-200";
     if (color === 'green') return base + "bg-green-100 text-green-800";
     if (color === 'red') return base + "bg-red-100 text-red-800";
@@ -361,29 +357,28 @@ export default function Dashboard({ currentUser }) {
   }, [outboxPosts]);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       
-      <div className="bg-slate-900 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 text-white print:hidden">
+      {/* HEADER MODULE */}
+      <div className="bg-slate-900 rounded-2xl p-4 shadow-xl flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 text-white print:hidden">
         <div className="flex items-center gap-3 bg-slate-800/60 p-2 rounded-xl border border-slate-700/50">
           <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg'} referrerPolicy="no-referrer" className="w-10 h-10 rounded-full bg-white shadow" alt="" />
           <div className="text-left leading-tight min-w-0">
             <p className="text-xs font-black text-slate-100 truncate">{currentUser?.full_name || 'System Member'}</p>
             <p className="text-[10px] font-medium text-slate-400 truncate mt-0.5">{currentUser?.email || 'Active verified session'}</p>
           </div>
-          <button onClick={() => navigate('/edit-profile')} className="text-[10px] font-bold bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded-lg transition-colors border border-slate-700">Edit Profile</button>
+          <button onClick={() => navigate('/edit-profile')} className="text-[10px] font-bold bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded-lg transition-colors border border-slate-700 shrink-0">Edit</button>
         </div>
 
-       <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => setCurrentTab('workflow')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>📋 Workflows</button>
-          <button onClick={() => setCurrentTab('wallet')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800'}`}>🏦 Wallet</button>
-          
-         <div className="flex border-l border-slate-700 pl-2 ml-2 gap-2">
-            <button onClick={() => navigate('/receipt-form')} className="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow">📸 Upload Receipt</button>
-            <button onClick={() => navigate('/receipt-vault')} className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow">🗄️ View Vault</button>
-          </div>
+        {/* 🎯 FLUID RESPONSIVE GRID WRAPPER FOR NAVIGATION CONTROLS */}
+        <div className="w-full lg:w-auto min-w-0 max-w-full grid grid-cols-2 sm:flex sm:items-center gap-2">
+          <button onClick={() => setCurrentTab('workflow')} className={`w-full sm:w-auto text-center px-4 py-2.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap shrink-0 ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800'}`}>📋 Workflows</button>
+          <button onClick={() => setCurrentTab('wallet')} className={`w-full sm:w-auto text-center px-4 py-2.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap shrink-0 ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800'}`}>🏦 Wallet</button>
+          <button onClick={() => navigate('/receipt-form')} className="w-full sm:w-auto text-center px-4 py-2.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow whitespace-nowrap shrink-0">📸 Upload Receipt</button>
+          <button onClick={() => navigate('/receipt-vault')} className="w-full sm:w-auto text-center px-4 py-2.5 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow whitespace-nowrap shrink-0">🗄️ Vault</button>
         </div>
 
-        <div className="flex items-center justify-end gap-2.5">
+        <div className="flex items-center justify-between lg:justify-end gap-2.5 pt-2 lg:pt-0 border-t border-slate-800 lg:border-none">
           <button onClick={handleRefreshAll} disabled={loading} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-2 rounded font-mono hover:bg-slate-700 flex items-center gap-2 transition-colors disabled:opacity-50">
             {loading ? <span className="animate-spin text-sm leading-none">⏳</span> : <span>🔄</span>} REFRESH DATA
           </button>
@@ -394,20 +389,20 @@ export default function Dashboard({ currentUser }) {
       {currentTab === 'wallet' ? (
         <div className="animate-fadeIn"><WalletProfile currentUser={currentUser} /></div>
       ) : (
-        <div className="space-y-8 animate-fadeIn">
-          <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">📊 New Workflow Submission</h3>
-            <form onSubmit={handleCreatePost} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-6 md:space-y-8 animate-fadeIn">
+          <div className="bg-white rounded-xl shadow-md border border-slate-200 p-4 md:p-6">
+            <h3 className="text-base md:text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">📊 New Workflow Submission</h3>
+            <form onSubmit={handleCreatePost} className="space-y-4 md:space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Request Categories (Select Multiple)</label>
-                  <div className="flex flex-wrap gap-2 mb-2">
+                  <label className="block text-xs md:text-sm font-semibold text-slate-700 mb-2">Request Categories (Select Multiple)</label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
                     {dbCategories.map(cat => (
-                      <button key={cat.id} type="button" onClick={() => handleToggleCategory(cat.name)} className={`text-xs font-bold px-3 py-1.5 rounded-md border transition-colors ${selectedCategories.includes(cat.name) ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}>
+                      <button key={cat.id} type="button" onClick={() => handleToggleCategory(cat.name)} className={`text-[11px] md:text-xs font-bold px-2.5 py-1.5 rounded-md border transition-colors ${selectedCategories.includes(cat.name) ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}>
                         {cat.icon} {cat.name}
                       </button>
                     ))}
-                    <button type="button" onClick={() => handleToggleCategory('custom')} className={`text-xs font-bold px-3 py-1.5 rounded-md border transition-colors ${selectedCategories.includes('custom') ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}>✍️ Custom...</button>
+                    <button type="button" onClick={() => handleToggleCategory('custom')} className={`text-[11px] md:text-xs font-bold px-2.5 py-1.5 rounded-md border transition-colors ${selectedCategories.includes('custom') ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}>✍️ Custom...</button>
                   </div>
                   {selectedCategories.includes('custom') && (
                     <input type="text" placeholder="Type custom category name..." value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} required className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 animate-fadeIn mt-2" />
@@ -415,10 +410,10 @@ export default function Dashboard({ currentUser }) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Amount ($)</label>
-                  <div className="flex flex-wrap gap-2 mb-2">
+                  <label className="block text-xs md:text-sm font-semibold text-slate-700 mb-2">Amount ($)</label>
+                  <div className="flex flex-wrap gap-1.5 mb-2 overflow-x-auto pb-1 scrollbar-none">
                     {[100, 500, 1000, 5000, 10000].map(val => (
-                      <button key={val} type="button" onClick={() => setAmount(val.toString())} className={`text-xs font-bold px-2.5 py-1 rounded-md border transition-colors ${amount === val.toString() ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}>${val.toLocaleString()}</button>
+                      <button key={val} type="button" onClick={() => setAmount(val.toString())} className={`text-[11px] md:text-xs font-bold px-2.5 py-1 rounded-md border transition-colors ${amount === val.toString() ? 'bg-blue-600 text-white border-blue-700 shadow-sm ring-2 ring-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'}`}>${val.toLocaleString()}</button>
                     ))}
                   </div>
                   <div className="relative">
@@ -429,21 +424,21 @@ export default function Dashboard({ currentUser }) {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Special Note (Optional)</label>
+                <label className="block text-xs md:text-sm font-semibold text-slate-700 mb-2">Special Note (Optional)</label>
                 <input type="text" placeholder="Add context for the verifier..." value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500" />
               </div>
 
               <div className="pt-2 border-t border-slate-100">
-                <label className="block text-sm font-semibold text-slate-700 mb-3">Assign Verifiers</label>
-                <div className="flex flex-wrap gap-2 mb-3 min-h-[32px]">
+                <label className="block text-xs md:text-sm font-semibold text-slate-700 mb-3">Assign Verifiers</label>
+                <div className="flex flex-wrap gap-1.5 mb-3 min-h-[32px]">
                   {selectedTagUsers.length === 0 ? (
                     <span className="text-xs text-slate-400 italic flex items-center">No verifiers assigned yet...</span>
                   ) : (
                     selectedTagUsers.map(id => {
                       const user = allUsers.find(u => u.id === id);
                       return (
-                        <span key={id} className="bg-blue-100 border border-blue-200 text-blue-800 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-2 shadow-sm">
-                          {user?.full_name || 'Unknown'} <button type="button" onClick={() => handleToggleVerifierCheckbox(id)} className="text-blue-500 hover:text-red-500 hover:bg-white rounded-full h-4 w-4 flex items-center justify-center leading-none">×</button>
+                        <span key={id} className="bg-blue-100 border border-blue-200 text-blue-800 text-[11px] md:text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
+                          {user?.full_name || 'Unknown'} <button type="button" onClick={() => handleToggleVerifierCheckbox(id)} className="text-blue-500 hover:text-red-500 hover:bg-white rounded-full h-4 w-4 flex items-center justify-center text-xs leading-none">×</button>
                         </span>
                       );
                     })
@@ -461,7 +456,7 @@ export default function Dashboard({ currentUser }) {
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                       {allUsers.filter(u => u.full_name.toLowerCase().includes(verifierSearch.toLowerCase())).map((user) => (
-                        <label key={user.id} className={`flex items-center space-x-3 p-2.5 border rounded-lg cursor-pointer transition-all ${selectedTagUsers.includes(user.id) ? 'bg-blue-50 border-blue-300 shadow-sm' : 'bg-white border-slate-200 hover:border-blue-400 shadow-sm'}`}>
+                        <label key={user.id} className={`flex items-center space-x-3 p-2 border rounded-lg cursor-pointer transition-all ${selectedTagUsers.includes(user.id) ? 'bg-blue-50 border-blue-300 shadow-sm' : 'bg-white border-slate-200 hover:border-blue-400 shadow-sm'}`}>
                           <input type="checkbox" checked={selectedTagUsers.includes(user.id)} onChange={() => handleToggleVerifierCheckbox(user.id)} className="h-4 w-4 rounded text-blue-600 border-slate-300 cursor-pointer focus:ring-blue-500" />
                           <div className="text-left min-w-0">
                             <p className="text-xs font-bold text-slate-800 truncate">{user.full_name}</p>
@@ -474,38 +469,38 @@ export default function Dashboard({ currentUser }) {
                 </div>
               </div>
 
-              <div className="flex justify-end pt-4">
-                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-black text-sm px-8 py-3 rounded-xl shadow-md transition-transform hover:scale-[1.02]">🚀 Broadcast Request</button>
+              <div className="flex justify-end pt-2">
+                <button type="submit" className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-black text-sm px-8 py-3 rounded-xl shadow-md transition-transform active:scale-95">🚀 Broadcast Request</button>
               </div>
             </form>
           </div>
 
           {loading ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
               <div className="space-y-4"><div className="h-6 w-1/2 bg-slate-200 rounded animate-pulse"></div>{[1,2,3].map(i => <div key={i} className="h-32 bg-slate-200 rounded-xl animate-pulse"></div>)}</div>
               <div className="space-y-4"><div className="h-6 w-1/2 bg-slate-200 rounded animate-pulse"></div>{[1,2,3].map(i => <div key={i} className="h-28 bg-slate-200 rounded-xl animate-pulse"></div>)}</div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
               <div className="space-y-4">
-                <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📥 ACTION REQUIRED BY YOU</h3>
+                <h3 className="text-base md:text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📥 ACTION REQUIRED BY YOU</h3>
                 {inboxPosts.filter(p => p.status === 'pending').length === 0 ? (
                   <p className="text-sm text-slate-400 bg-white border rounded-xl p-6 text-center shadow-inner">All caught up! Desk is clean.</p>
                 ) : (
                   inboxPosts.filter(p => p.status === 'pending').map(post => (
-                    <div key={post.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-                      <div className="flex justify-between items-start">
-                        <p className="text-sm font-bold text-slate-900">From: <span className="font-normal text-slate-600">{post.author?.full_name}</span></p>
+                    <div key={post.id} className="bg-white border border-slate-200 rounded-xl p-4 md:p-5 shadow-sm space-y-4">
+                      <div className="flex justify-between items-start gap-2">
+                        <p className="text-xs md:text-sm font-bold text-slate-900 truncate">From: <span className="font-normal text-slate-600">{post.author?.full_name}</span></p>
                         <span className={getFlagBadge(post.status, post.flag_color)}>{post.status}</span>
                       </div>
-                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">{renderPostContentWithNote(post.content)}</div>
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs md:text-sm">{renderPostContentWithNote(post.content)}</div>
                       
                       <div className="space-y-2 pt-2 border-t border-slate-100">
                         <input type="text" placeholder="Reason if rejecting/editing..." value={reasonMap[post.id] || ''} onChange={(e) => setReasonMap({...reasonMap, [post.id]: e.target.value})} className="w-full text-xs px-3 py-2 bg-slate-50 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                        <div className="flex gap-2 justify-end">
-                          <button onClick={() => handleWorkflowAction(post.id, 'approved', 'green')} className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Approve</button>
-                          <button onClick={() => handleWorkflowAction(post.id, 'disapproved', 'red')} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Deny</button>
-                          <button onClick={() => handleWorkflowAction(post.id, 'edit_requested', 'blue')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">Request Edit</button>
+                        <div className="flex flex-wrap gap-1.5 justify-end">
+                          <button onClick={() => handleWorkflowAction(post.id, 'approved', 'green')} className="flex-1 sm:flex-none bg-green-600 hover:bg-green-700 text-white text-[11px] font-bold px-3 py-2 rounded-md shadow">Approve</button>
+                          <button onClick={() => handleWorkflowAction(post.id, 'disapproved', 'red')} className="flex-1 sm:flex-none bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold px-3 py-2 rounded-md shadow">Deny</button>
+                          <button onClick={() => handleWorkflowAction(post.id, 'edit_requested', 'blue')} className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold px-3 py-2 rounded-md shadow">Edit</button>
                         </div>
                       </div>
                     </div>
@@ -514,20 +509,20 @@ export default function Dashboard({ currentUser }) {
               </div>
 
               <div className="space-y-4">
-                <h3 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📤 YOUR TRACKING LOG</h3>
+                <h3 className="text-base md:text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">📤 YOUR TRACKING LOG</h3>
                 {processedOutboxItems.length === 0 ? <p className="text-sm text-slate-400 bg-white border rounded-xl p-6 text-center shadow-inner">No submissions logged.</p> : processedOutboxItems.map(post => (
-                  <div key={post.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3">
+                  <div key={post.id} className="bg-white border border-slate-200 rounded-xl p-4 md:p-5 shadow-sm space-y-3">
                     {post.displayStatus === 'edit_requested' ? (
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-blue-600 uppercase">✏️ Revise Your Submission:</label>
-                        <textarea value={editContentMap[post.id] !== undefined ? editContentMap[post.id] : post.content} onChange={(e) => setEditContentMap({...editContentMap, [post.id]: e.target.value})} className="w-full text-sm p-2 bg-slate-50 border rounded-lg h-16" />
+                        <label className="text-[11px] font-bold text-blue-600 uppercase">✏️ Revise Your Submission:</label>
+                        <textarea value={editContentMap[post.id] !== undefined ? editContentMap[post.id] : post.content} onChange={(e) => handleUpdateContentMap(post.id, e.target.value)} className="w-full text-sm p-2 bg-slate-50 border rounded-lg h-16" />
                         <button onClick={() => handleResubmitPost(post.id, editContentMap[post.id] || post.content)} className="bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow">🔄 Re-Submit</button>
                       </div>
                     ) : (
-                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">{renderPostContentWithNote(post.content)}</div>
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs md:text-sm">{renderPostContentWithNote(post.content)}</div>
                     )}
                     <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-50">
-                      <span className="text-slate-500 font-medium">Tracking Mode Active</span>
+                      <span className="text-slate-500 font-medium">Tracking Active</span>
                       <span className={getFlagBadge(post.displayStatus, post.displayFlag)}>{post.displayStatus}</span>
                     </div>
                     {post.feedbackText && <p className="text-xs bg-purple-50 text-purple-700 p-2 rounded font-medium">✨ {post.feedbackText}</p>}

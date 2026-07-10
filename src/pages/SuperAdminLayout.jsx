@@ -11,8 +11,10 @@ import { useNavigate } from 'react-router-dom';
 import StaffProfiles from './StaffProfiles';
 
 export default function SuperAdminLayout({ currentUser }) {
-  const [activeView, setActiveView] = useState('categories');
+  // 🎯 FIXED LANDING ROUTE: Automatically loads up the staff logs and total budget values immediately
+  const [activeView, setActiveView] = useState('directory');
   const [allProfiles, setAllProfiles] = useState([]);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); 
   const navigate = useNavigate();
 
   const fetchProfiles = async () => {
@@ -21,9 +23,8 @@ export default function SuperAdminLayout({ currentUser }) {
   };
 
   useEffect(() => {
-    fetchProfiles(); // Initial load
+    fetchProfiles(); 
 
-    // 📡 LIVE LISTENER: Instantly refetch if an admin toggles a user
     const profileChannel = supabase.channel('super-admin-profiles')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
          fetchProfiles();
@@ -82,31 +83,61 @@ export default function SuperAdminLayout({ currentUser }) {
 
   const NavButton = ({ id, icon, label, isDanger }) => {
     const isActive = activeView === id;
+    
+    const handleTabClick = () => {
+      if (isDanger) {
+        navigate('/receipt-vault');
+      } else {
+        setActiveView(id);
+      }
+      setIsMobileMenuOpen(false); 
+    };
+
     if (isDanger) {
       return (
-        <button onClick={() => navigate('/receipt-vault')} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-bold transition-all hover:bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group">
+        <button onClick={handleTabClick} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-bold transition-all hover:bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group">
           <span className="text-lg group-hover:scale-110 transition-transform">{icon}</span> {label}
         </button>
       );
     }
     return (
-      <button onClick={() => setActiveView(id)} className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/50' : 'hover:bg-white/5 text-slate-400 hover:text-slate-200'}`}>
+      <button onClick={handleTabClick} className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/50' : 'hover:bg-white/5 text-slate-400 hover:text-slate-200'}`}>
         <span className="text-lg">{icon}</span> {label}
       </button>
     );
   };
 
   return (
-    <div className="flex h-screen bg-slate-950 overflow-hidden font-sans text-slate-200">
+    <div className="flex flex-col md:flex-row h-screen bg-slate-950 overflow-hidden font-sans text-slate-200">
       
-      {/* 🌑 MODERN GLASS SIDEBAR (Hidden during print) */}
-      <div className="w-72 bg-slate-900/50 backdrop-blur-xl border-r border-slate-800/50 flex flex-col shadow-2xl z-20 print:hidden">
-        <div className="p-8 border-b border-slate-800/50">
+      {/* MOBILE PANEL CONTROL HEADER BAR */}
+      <div className="md:hidden bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center z-30 shrink-0 print:hidden">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow">
+            <span className="text-white text-xs font-black">⚡</span>
+          </div>
+          <h1 className="text-sm font-black text-white tracking-tight">SUPER ADMIN</h1>
+        </div>
+        <button 
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+          className="text-slate-200 bg-slate-800 border border-slate-700 text-xs px-3 py-1.5 rounded-lg active:scale-95 transition-transform"
+        >
+          {isMobileMenuOpen ? '✕ Close' : '☰ Menu'}
+        </button>
+      </div>
+
+      {/* MODERN SLIDE DRAWER SIDEBAR CONTAINER */}
+      <div className={`
+        fixed inset-y-0 left-0 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:relative md:translate-x-0 transition-transform duration-300 ease-in-out
+        w-72 bg-slate-900/95 md:bg-slate-900/50 backdrop-blur-xl border-r border-slate-800/50 flex flex-col shadow-2xl z-40 print:hidden
+      `}>
+        <div className="p-8 border-b border-slate-800/50 hidden md:block">
           <div className="flex items-center gap-3 mb-1">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
               <span className="text-white text-sm font-black">⚡</span>
             </div>
-            <h1 className="text-xl font-black text-white tracking-tight"> SUPER ADMIN  </h1>
+            <h1 className="text-xl font-black text-white tracking-tight"> SUPER ADMIN </h1>
           </div>
           <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest pl-11">Command Center</p>
         </div>
@@ -120,7 +151,6 @@ export default function SuperAdminLayout({ currentUser }) {
           <div className="my-2 border-t border-slate-800/50"></div>
           
           <NavButton id="directory" icon="👥" label="Staff Directory" />
-          {/* 🚀 ADDED STAFF PROFILES NAV BUTTON */}
           <NavButton id="staff" icon="🧑‍💻" label="Manage Roles & Access" />
           
           <div className="my-2 border-t border-slate-800/50"></div>
@@ -139,11 +169,16 @@ export default function SuperAdminLayout({ currentUser }) {
         </div>
       </div>
 
-      {/* ☀️ MAIN CONTENT AREA (Clean white background for printing) */}
+      {/* DIM BLUR MODAL OVERLAY FOR PHONE MENUS */}
+      {isMobileMenuOpen && (
+        <div onClick={() => setIsMobileMenuOpen(false)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 md:hidden animate-fadeIn" />
+      )}
+
+      {/* MAIN DATA RENDERING CANVAS */}
       <div className="flex-1 flex flex-col relative h-full overflow-hidden bg-slate-50 text-slate-900 print:bg-white print:overflow-visible">
         
-        {/* HEADER (Hidden during print) */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 h-20 flex items-center justify-between px-10 z-10 shadow-sm shrink-0 print:hidden">
+        {/* HEADER */}
+        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 h-20 hidden md:flex items-center justify-between px-10 z-10 shadow-sm shrink-0 print:hidden">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-xl shadow-inner">
               {activeView === 'categories' && '🗂️'}
@@ -151,7 +186,7 @@ export default function SuperAdminLayout({ currentUser }) {
               {activeView === 'financials' && '🏦'}
               {activeView === 'reports' && '🖨️'}
               {activeView === 'directory' && '👥'}
-              {activeView === 'staff' && '🧑‍💻'} {/* 🚀 ADDED ICON */}
+              {activeView === 'staff' && '🧑‍💻'} 
               {activeView === 'printall' && '📑'} 
             </div>
             <div>
@@ -161,7 +196,7 @@ export default function SuperAdminLayout({ currentUser }) {
                 {activeView === 'financials' && 'Master Financial Ledgers'}
                 {activeView === 'reports' && 'Data Export Engine'}
                 {activeView === 'directory' && 'Staff Directory'}
-                {activeView === 'staff' && 'Employee Access & Roles'} {/* 🚀 ADDED TITLE */}
+                {activeView === 'staff' && 'Employee Access & Roles'} 
                 {activeView === 'printall' && 'Master Export Engine'} 
               </h2>
               <p className="text-xs font-bold text-slate-400 mt-0.5">Live Database Connection</p>
@@ -186,18 +221,15 @@ export default function SuperAdminLayout({ currentUser }) {
           </div>
         </header>
 
-        {/* MAIN BODY (Adapts to page size for printing) */}
-        <main className="flex-1 overflow-y-auto p-10 relative print:overflow-visible print:p-0">
+        {/* SCALABLE INNER WORKSPACE FRAME */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-10 relative print:overflow-visible print:p-0">
           <div className="max-w-7xl mx-auto pb-12 animate-fadeIn print:max-w-full print:p-0">
             {activeView === 'categories' && <CategoryManager />}
             {activeView === 'workflows' && <MasterWorkflowLedger currentUser={currentUser} />}
             {activeView === 'financials' && <MasterFinancialLedger />}
             {activeView === 'reports' && <ReportGenerator />}
             {activeView === 'directory' && <StaffDirectory allProfiles={allProfiles} currentUser={currentUser} fetchAdminData={fetchProfiles} />}
-            
-            {/* 🚀 RENDER THE NEW STAFF PROFILES COMPONENT */}
             {activeView === 'staff' && <StaffProfiles currentUser={currentUser} />}
-            
             {activeView === 'printall' && <PrintAll />}
           </div>
         </main>
