@@ -6,7 +6,8 @@
     "CapacitorUpdater": {
       "autoUpdate": true,
       "stats": true,
-      "disableAutoUpdateOnDev": true
+      "disableAutoUpdateOnDev": true,
+      "development": false
     }
   }
 }
