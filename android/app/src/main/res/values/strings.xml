@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">keepeye</string>
+    <string name="title_activity_main">keepeye</string>
+    <string name="package_name">app.vercel.org99</string>
+    <string name="custom_url_scheme">app.vercel.org99</string>
+</resources>
