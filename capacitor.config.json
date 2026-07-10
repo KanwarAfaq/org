@@ -4,8 +4,14 @@
   "webDir": "dist",
   "plugins": {
     "CapacitorUpdater": {
-      "autoUpdate": true,
-      "stats": true
+      "autoUpdate": "always",
+      "stats": true,
+      "appId": "app.vercel.org99",
+      "version": "0.0.0",
+      "autoSplashscreen": true
+    },
+    "SplashScreen": {
+      "launchAutoHide": false
     }
   }
 }
