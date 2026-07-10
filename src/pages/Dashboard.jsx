@@ -29,6 +29,7 @@ export default function Dashboard({ currentUser }) {
 
  // =========================================================================
 // =========================================================================
+ // =========================================================================
   // ⚡ UNIFIED LIFECYCLE: DATA SYNC & SECURE PUSH REGISTRATION
   // =========================================================================
   useEffect(() => {
@@ -46,46 +47,38 @@ export default function Dashboard({ currentUser }) {
           fetchUsers(); 
       }).subscribe();
 
-    // 2. Safely Initialize OneSignal Device Hook (Only if not already initialized)
-    // 2. Safely Initialize OneSignal Device Hook (Only if not already initialized)
+    // 2. Initialize OneSignal and Force Synchronous Tagging
     const initializePushNotifications = async () => {
-      // Hard check native OneSignal state before doing anything
-      if (window.__oneSignalInitialized || OneSignal.initialized) {
-        window.__oneSignalInitialized = true;
-        return; 
-      }
-
       try {
-        window.__oneSignalInitialized = true;
-
-        await OneSignal.init({
-          appId: "b572881a-d9f6-4c75-a6c1-84a815108921",
-          allowLocalhostAsSecureOrigin: true, 
-        });
-
-        await OneSignal.User.addTag("user_id", currentUser.id);
-        console.log("✅ Device mapped securely to user_id profile tag:", currentUser.id);
-      } catch (err) {
-        // Unpack the error safely whether it's an Object or a raw String
-        const errorString = err?.message || String(err);
-
-        // Quietly exit if it's just an initialization race condition
-        if (errorString.includes("already initialized")) {
-          return;
+        // Init the SDK if it hasn't been initialized yet
+        if (!window.__oneSignalInitialized && !OneSignal.initialized) {
+          window.__oneSignalInitialized = true;
+          await OneSignal.init({
+            appId: "b572881a-d9f6-4c75-a6c1-84a815108921",
+            allowLocalhostAsSecureOrigin: true, 
+          });
         }
+
+        // 🚀 THE FIX: Explicitly login the user and set the user_id tag every time the ID loads!
+        await OneSignal.login(currentUser.id); // Sets the External ID field automatically
+        await OneSignal.User.addTag("user_id", currentUser.id); // Sets the Data Tag field
         
-        console.warn("⚠️ OneSignal sync initialization paused:", errorString);
-        window.__oneSignalInitialized = false; // Reset on true crash
+        console.log("🎯 OneSignal successfully synchronized for ID:", currentUser.id);
+      } catch (err) {
+        const errorString = err?.message || String(err);
+        if (!errorString.includes("already initialized")) {
+          console.warn("⚠️ OneSignal tag matching paused:", errorString);
+        }
       }
     };
 
     initializePushNotifications();
 
-    // Cleanup subscription channel on unmount
     return () => {
       supabase.removeChannel(workflowChannel);
     };
-  }, [currentUser?.id]); // 🚀 Safe dependency! __oneSignalInitialized will protect against infinite loops
+  }, [currentUser?.id]); // Fires immediately when currentUser log-in data becomes available!
+  // =========================================================================d]); // 🚀 Safe dependency! __oneSignalInitialized will protect against infinite loops
   // =========================================================================
 
   const fetchActiveCategories = async () => {
