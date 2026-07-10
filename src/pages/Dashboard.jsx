@@ -26,15 +26,6 @@ export default function Dashboard({ currentUser }) {
   const [reasonMap, setReasonMap] = useState({});
   const [editContentMap, setEditContentMap] = useState({});
 
-<<<<<<< HEAD
-=======
-
- // =========================================================================
-// =========================================================================
- // =========================================================================
-  // ⚡ UNIFIED LIFECYCLE: DATA SYNC & SECURE PUSH REGISTRATION
-  // =========================================================================
->>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
   useEffect(() => {
     if (!currentUser?.id) return;
 
@@ -49,22 +40,8 @@ export default function Dashboard({ currentUser }) {
           fetchUsers(); 
       }).subscribe();
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     const initializePushNotifications = async () => {
       try {
-=======
-    // 2. Initialize OneSignal and Force Synchronous Tagging
-    const initializePushNotifications = async () => {
-      try {
-        // Init the SDK if it hasn't been initialized yet
->>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
-=======
-    // 2. Initialize OneSignal and Force Synchronous Tagging
-    const initializePushNotifications = async () => {
-      try {
-        // Init the SDK if it hasn't been initialized yet
->>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
         if (!window.__oneSignalInitialized && !OneSignal.initialized) {
           window.__oneSignalInitialized = true;
           await OneSignal.init({
@@ -73,21 +50,8 @@ export default function Dashboard({ currentUser }) {
           });
         }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
         await OneSignal.login(currentUser.id); 
         await OneSignal.User.addTag("user_id", currentUser.id); 
-=======
-=======
->>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
-        // 🚀 THE FIX: Explicitly login the user and set the user_id tag every time the ID loads!
-        await OneSignal.login(currentUser.id); // Sets the External ID field automatically
-        await OneSignal.User.addTag("user_id", currentUser.id); // Sets the Data Tag field
-        
-<<<<<<< HEAD
->>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
-=======
->>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
         console.log("🎯 OneSignal successfully synchronized for ID:", currentUser.id);
       } catch (err) {
         const errorString = err?.message || String(err);
@@ -102,16 +66,7 @@ export default function Dashboard({ currentUser }) {
     return () => {
       supabase.removeChannel(workflowChannel);
     };
-<<<<<<< HEAD
-<<<<<<< HEAD
   }, [currentUser?.id]);
-=======
-=======
->>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
-  }, [currentUser?.id]); // Fires immediately when currentUser log-in data becomes available!
-  // =========================================================================d]); // 🚀 Safe dependency! __oneSignalInitialized will protect against infinite loops
-  // =========================================================================
->>>>>>> 52c00574593a213cc26a54b6f0fa5623dd376f74
 
   const fetchActiveCategories = async () => {
     const { data } = await supabase.from('workflow_categories').select('*').eq('is_active', true).order('created_at', { ascending: true });
@@ -415,7 +370,7 @@ export default function Dashboard({ currentUser }) {
           <button onClick={() => navigate('/edit-profile')} className="text-[10px] font-bold bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded-lg transition-colors border border-slate-700 shrink-0">Edit</button>
         </div>
 
-        {/* 🎯 FLUID RESPONSIVE GRID WRAPPER FOR NAVIGATION CONTROLS */}
+        {/* RESPONSIVE SUB-GRID */}
         <div className="w-full lg:w-auto min-w-0 max-w-full grid grid-cols-2 sm:flex sm:items-center gap-2">
           <button onClick={() => setCurrentTab('workflow')} className={`w-full sm:w-auto text-center px-4 py-2.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap shrink-0 ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800'}`}>📋 Workflows</button>
           <button onClick={() => setCurrentTab('wallet')} className={`w-full sm:w-auto text-center px-4 py-2.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap shrink-0 ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800'}`}>🏦 Wallet</button>
