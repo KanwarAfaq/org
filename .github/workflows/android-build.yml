@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: 22  # 🚀 THE CRUCIAL FIX: Upgraded from 20 to 22!
+          node-version: 22
           cache: 'npm'
 
       - name: Install Dependencies
@@ -28,11 +28,11 @@ jobs:
       - name: Sync Web Assets to Android Shell
         run: npx cap sync android
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'  # 🚀 THE FIX: Upgraded from 17 to 21 to clear the release target error!
 
       - name: Build Debug APK via Gradle
         run: |
