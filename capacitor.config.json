@@ -1,0 +1,11 @@
+{
+  "appId": "app.vercel.org99",
+  "appName": "keepeye",
+  "webDir": "dist",
+  "plugins": {
+    "CapacitorUpdater": {
+      "autoUpdate": true,
+      "stats": true
+    }
+  }
+}
