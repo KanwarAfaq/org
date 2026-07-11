@@ -320,7 +320,7 @@ export default function Dashboard({ currentUser }) {
     return (
       <div className="space-y-2">
         <p className="text-slate-700 font-medium text-xs md:text-sm">{parts[0]}</p>
-        {parts[1] && <p className="text-xs bg-amber-50 text-amber-800 border-l-4 border-amber-500 p-2.5 rounded-r-md font-sans">💡  {parts[1]}</p>}
+        {parts[1] && <p className="text-xs bg-amber-50 text-amber-800 border-l-4 border-amber-500 p-2.5 rounded-r-md font-sans">💡 {parts[1]}</p>}
       </div>
     );
   };
@@ -359,7 +359,7 @@ export default function Dashboard({ currentUser }) {
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       
-      {/* HEADER MODULE */}
+      {/* HEADER CONTROL CONTAINER */}
       <div className="bg-slate-900 rounded-2xl p-4 shadow-xl flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 text-white print:hidden">
         <div className="flex items-center gap-3 bg-slate-800/60 p-2 rounded-xl border border-slate-700/50">
           <img src={currentUser?.avatar_url || 'https://api.dicebear.com/7.x/bottts/svg'} referrerPolicy="no-referrer" className="w-10 h-10 rounded-full bg-white shadow" alt="" />
@@ -370,12 +370,11 @@ export default function Dashboard({ currentUser }) {
           <button onClick={() => navigate('/edit-profile')} className="text-[10px] font-bold bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded-lg transition-colors border border-slate-700 shrink-0">Edit</button>
         </div>
 
-        {/* RESPONSIVE SUB-GRID */}
-        <div className="w-full lg:w-auto min-w-0 max-w-full grid grid-cols-2 sm:flex sm:items-center gap-2">
-          <button onClick={() => setCurrentTab('workflow')} className={`w-full sm:w-auto text-center px-4 py-2.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap shrink-0 ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800'}`}>📋 Workflows</button>
-          <button onClick={() => setCurrentTab('wallet')} className={`w-full sm:w-auto text-center px-4 py-2.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap shrink-0 ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800'}`}>🏦 Wallet</button>
-          <button onClick={() => navigate('/receipt-form')} className="w-full sm:w-auto text-center px-4 py-2.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow whitespace-nowrap shrink-0">📸 Upload Receipt</button>
-          <button onClick={() => navigate('/receipt-vault')} className="w-full sm:w-auto text-center px-4 py-2.5 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow whitespace-nowrap shrink-0">🗄️ Vault</button>
+        {/* 📱 FIXED RESPONSIVE BUTTON WRAPPER MAP: Stops elements from overflowing or breaking off mobile screens */}
+        <div className="w-full lg:w-auto min-w-0 max-w-full grid grid-cols-3 sm:flex sm:items-center gap-2">
+          <button onClick={() => setCurrentTab('workflow')} className={`text-center px-4 py-2.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800'}`}>📋 Workflows</button>
+          <button onClick={() => setCurrentTab('wallet')} className={`text-center px-4 py-2.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800'}`}>🏦 Wallet</button>
+          <button onClick={() => navigate('/receipt-vault')} className="text-center px-4 py-2.5 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow whitespace-nowrap">🗄️ Open Vault</button>
         </div>
 
         <div className="flex items-center justify-between lg:justify-end gap-2.5 pt-2 lg:pt-0 border-t border-slate-800 lg:border-none">
