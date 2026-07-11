@@ -98,12 +98,12 @@ export default function AdminPanel({ currentUser }) { // 🆕 Removed setActiveP
           <button type="button" onClick={() => setAdminSubView('directory')} className={`px-4 py-2 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow ${adminSubView === 'directory' ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>👥 Staff Directory</button>
           
           {/* 🆕 FIXED ROUTER LINKS */}
-          <div className="flex border-l border-slate-700 pl-2 ml-2 gap-2">
-            <button onClick={() => navigate('/receipt-vault')} className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow">🗄️ View Vault</button>
-          </div>
+          
+            <button onClick={() => navigate('/receipt-vault')} className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow">🗄️ Receipts</button>
+          
         </div>
-       <button onClick={handleSignOut} className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900">❌ SIGN OUT</button>
-        <button type="button" onClick={fetchAdminData} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-1 rounded font-mono shadow-inner hover:bg-slate-700">REFRESH DATA</button>
+       <button onClick={handleSignOut} className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900">⏻ SIGN OUT</button>
+        <button type="button" onClick={fetchAdminData} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-1 rounded font-mono shadow-inner hover:bg-slate-700">🔄REFRESH DATA</button>
       </div>
 
       <div className="w-full">

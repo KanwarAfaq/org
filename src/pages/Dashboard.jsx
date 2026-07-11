@@ -374,14 +374,14 @@ export default function Dashboard({ currentUser }) {
         <div className="w-full lg:w-auto min-w-0 max-w-full grid grid-cols-3 sm:flex sm:items-center gap-2">
           <button onClick={() => setCurrentTab('workflow')} className={`text-center px-4 py-2.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${currentTab === 'workflow' ? 'bg-blue-600 text-white shadow' : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800'}`}>📋 Workflows</button>
           <button onClick={() => setCurrentTab('wallet')} className={`text-center px-4 py-2.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${currentTab === 'wallet' ? 'bg-blue-600 text-white shadow' : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800'}`}>🏦 Wallet</button>
-          <button onClick={() => navigate('/receipt-vault')} className="text-center px-4 py-2.5 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow whitespace-nowrap">🗄️ Open Vault</button>
+          <button onClick={() => navigate('/receipt-vault')} className="text-center px-4 py-2.5 text-xs font-bold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white shadow whitespace-nowrap">🗄️ Receipts</button>
         </div>
 
         <div className="flex items-center justify-between lg:justify-end gap-2.5 pt-2 lg:pt-0 border-t border-slate-800 lg:border-none">
           <button onClick={handleRefreshAll} disabled={loading} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-2 rounded font-mono hover:bg-slate-700 flex items-center gap-2 transition-colors disabled:opacity-50">
-            {loading ? <span className="animate-spin text-sm leading-none">⏳</span> : <span>🔄</span>} REFRESH DATA
+            {loading ? <span className="animate-spin text-sm leading-none">⏳</span> : <span>🔄</span>} 🔄REFRESH DATA
           </button>
-          <button onClick={handleSignOut} className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900">❌ SIGN OUT</button>
+          <button onClick={handleSignOut} className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900">⏻</button>
         </div>
       </div>
 
