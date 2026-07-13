@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 export default function ReceiptForm({ currentUser }) {
   const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME; 
   const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET; 
@@ -27,11 +27,26 @@ export default function ReceiptForm({ currentUser }) {
     if (data) setCategories(data);
   };
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile) {
-      setFile(selectedFile);
-      setPreviewUrl(URL.createObjectURL(selectedFile)); 
+ const triggerNativeCameraPrompt = async () => {
+    try {
+      // 1. This triggers the native mobile menu (Camera vs. Gallery)
+      const image = await Camera.getPhoto({
+        quality: 80,
+        allowEditing: false,
+        resultType: CameraResultType.Uri,
+        source: CameraSource.Prompt // 👈 This is the magic word that forces the choice menu!
+      });
+
+      // 2. Convert the native image into a web File object for Cloudinary
+      const response = await fetch(image.webPath);
+      const blob = await response.blob();
+      const newFile = new File([blob], `receipt_${Date.now()}.jpg`, { type: 'image/jpeg' });
+
+      // 3. Save it to state just like before
+      setFile(newFile);
+      setPreviewUrl(image.webPath);
+    } catch (error) {
+      console.warn("User cancelled or camera error:", error);
     }
   };
 
@@ -147,8 +162,8 @@ export default function ReceiptForm({ currentUser }) {
             <input type="text" required value={purpose} onChange={(e) => setPurpose(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500" placeholder="e.g. Client Dinner" />
           </div>
 
-          <div className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center bg-slate-50 relative hover:bg-slate-100 cursor-pointer transition-colors">
-            <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+         {/* 🚀 Changed from an input field to a native click trigger */}
+          <div onClick={triggerNativeCameraPrompt} className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center bg-slate-50 relative hover:bg-slate-100 cursor-pointer transition-colors">
             {previewUrl ? (
               <div className="space-y-2">
                 <img src={previewUrl} className="max-h-48 mx-auto rounded-lg shadow-sm" alt="Preview" />

@@ -5,7 +5,7 @@ import App from './App.jsx'
 import { CapacitorUpdater } from '@capgo/capacitor-updater'
 import { App as NativeApp } from '@capacitor/app'
 import { supabase } from './supabaseClient'
-
+import { defineCustomElements } from '@ionic/pwa-elements/loader';
 CapacitorUpdater.notifyAppReady({ channel: "production" });
 
 // 🚀 Intercept custom deep links coming back from mobile Google Browser login
@@ -38,3 +38,4 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 )
+defineCustomElements(window);
