@@ -144,7 +144,7 @@ export default function ReceiptViewer({ currentUser }) {
       // ==========================================
       if (currentUser.is_super_admin) {
          await supabase.from('audit_logs').insert({
-            id: crypto.randomUUID(),
+            id: Date.now().toString(36) + Math.random().toString(36).substring(2),
             action_taken: 'ADMIN_VAULT_OVERRIDE',
             performed_by: currentUser.id,
             notes: `Master Admin bypassed global receipt vault PIN.`,
