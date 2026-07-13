@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import toast from 'react-hot-toast';
-
+import { Capacitor } from '@capacitor/core';
 export default function Login() {
   const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME; 
   const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET; 
@@ -183,7 +183,19 @@ export default function Login() {
     finally { setLoading(false); }
   };
 
-  const handleGoogleLogin = async () => { await supabase.auth.signInWithOAuth({ provider: 'google' }); };
+  const handleGoogleLogin = async () => {
+    // Detect if we are on a phone or a computer to set the correct return path
+    const redirectUrl = Capacitor.isNativePlatform() 
+      ? 'app.vercel.org99://login-callback' 
+      : window.location.origin;
+
+    await supabase.auth.signInWithOAuth({ 
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl
+      }
+    }); 
+  };
   const formatTime = (seconds) => { const m = Math.floor(seconds / 60); const s = seconds % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
 
   return (
