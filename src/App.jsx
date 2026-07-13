@@ -11,7 +11,7 @@ import ReceiptForm from './pages/ReceiptForm';
 import ReceiptViewer from './pages/ReceiptViewer';
 import EditProfile from './pages/EditProfile';
 import OneSignal from 'react-onesignal';
-import { App as CapacitorApp } from '@capacitor/app';
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
@@ -57,13 +57,12 @@ export default function App() {
       // 🚀 THE FIX: We removed the 'PASSWORD_RECOVERY' trap from here!
       if (session) {
         fetchAndEnsureProfile(session.user);
-        window.location.reload();
       } else {
         setCurrentUser(null);
         setLoading(false);
       }
     });
-    
+
     return () => subscription.unsubscribe();
   }, []);
 // 🚀 NEW: A dedicated function to trigger a background state refresh
