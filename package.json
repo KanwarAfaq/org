@@ -20,6 +20,7 @@
     "@emailjs/browser": "^4.4.1",
     "@ionic/pwa-elements": "^3.4.0",
     "@supabase/supabase-js": "^2.108.2",
+    "crypto-js": "^4.2.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "react": "^19.2.7",

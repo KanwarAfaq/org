@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import toast from 'react-hot-toast';
 import emailjs from '@emailjs/browser';
 import { v4 as uuidv4 } from 'uuid';
+import sha256 from 'crypto-js/sha256';
 export default function ReceiptViewer({ currentUser }) {
   const [activeTab, setActiveTab] = useState('standard');
 
@@ -49,11 +50,10 @@ export default function ReceiptViewer({ currentUser }) {
   const otpRefs = useRef([]);
 
   // Browser-native cryptographic hashing for the PIN
+// 📱 Mobile-Safe Cryptographic Hashing for the PIN
   const hashPin = async (plainPin) => {
-    const msgBuffer = new TextEncoder().encode(plainPin);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    // This generates a perfect SHA-256 hash without relying on the Android WebView
+    return sha256(plainPin).toString();
   };
 
   const handleUnlockVault = async (e) => {
