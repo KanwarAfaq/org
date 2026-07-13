@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import toast from 'react-hot-toast';
 import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
+
 export default function Login() {
   const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME; 
   const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET; 
@@ -184,18 +186,23 @@ export default function Login() {
   };
 
   const handleGoogleLogin = async () => {
-    // Detect if we are on a phone or a computer to set the correct return path
-    const redirectUrl = Capacitor.isNativePlatform() 
-      ? 'app.vercel.org99://login-callback' 
-      : window.location.origin;
+  // 1. Get the Supabase OAuth URL
+  const { data, error } = await supabase.auth.signInWithOAuth({ 
+    provider: 'google',
+    options: {
+      redirectTo: 'app.vercel.org99://login-callback',
+      skipBrowserRedirect: true // 👈 This is key for mobile
+    }
+  });
 
-    await supabase.auth.signInWithOAuth({ 
-      provider: 'google',
-      options: {
-        redirectTo: redirectUrl
-      }
-    }); 
-  };
+  if (error) return toast.error(error.message);
+
+  // 2. Open the login page INSIDE the app's browser window
+  await Browser.open({ 
+    url: data.url,
+    windowName: '_self' // 👈 This keeps the session inside the app
+  });
+};
   const formatTime = (seconds) => { const m = Math.floor(seconds / 60); const s = seconds % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
 
   return (
