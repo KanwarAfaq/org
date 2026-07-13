@@ -63,22 +63,24 @@ export default function App() {
       }
     });
 const setupDeepLink = CapacitorApp.addListener('appUrlOpen', (event) => {
+      console.log("Deep Link Intercepted:", event.url);
       
-      // Check if the URL contains the Google access token hash
-      if (event.url.includes('#access_token=')) {
-        
-        // Extract the token data from the deep link
-        const hashData = event.url.split('#')[1];
-        
-        // Force the app's internal browser to append the token. 
-        // Supabase will instantly detect this, read it, and log you in!
-        window.location.hash = hashData;
+      // Split the URL to grab everything after your custom scheme
+      // Example: splits "app.vercel.org99://login-callback?code=123" into "login-callback?code=123"
+      const urlPart = event.url.split('app.vercel.org99://')[1];
+      
+      if (urlPart) {
+        // Force the app's internal web engine to navigate to this exact route.
+        // This triggers the standard web behavior, allowing the Supabase client 
+        // to automatically detect the ?code= or #access_token= and log you in!
+        window.location.href = window.location.origin + '/' + urlPart;
       }
     });
 
     return () => {
       setupDeepLink.then(listener => listener.remove());
     };
+    
     return () => subscription.unsubscribe();
   }, []);
 // 🚀 NEW: A dedicated function to trigger a background state refresh
