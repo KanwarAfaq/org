@@ -58,72 +58,108 @@ export default function ReceiptViewer({ currentUser }) {
 
   const handleUnlockVault = async (e) => {
     e.preventDefault();
-    const pinAttempt = pin.join('');
 
-    if (!currentUser.is_super_admin && pinAttempt.length !== 4) {
-      return toast.error("Please enter a complete 4-digit PIN.");
-    }
+    const loadingToast = toast.loading(currentUser.is_super_admin ? "Verifying Master Clearance..." : "Decrypting Vault...");
 
     try {
-      const hashedAttempt = await hashPin(pinAttempt);
-      const { data: profile } = await supabase.from('profiles').select('sensitive_vault_pin').eq('id', currentUser.id).single();
+      // ==========================================
+      // 1. PIN CHECK (MEMBERS ONLY)
+      // ==========================================
+      if (!currentUser.is_super_admin) {
+        const pinAttempt = pin.join('');
+        if (pinAttempt.length !== 4) throw new Error("Please enter a complete 4-digit PIN.");
 
-      if (currentUser.is_super_admin || profile.sensitive_vault_pin === hashedAttempt || !profile.sensitive_vault_pin) {
-        
-        if (!profile.sensitive_vault_pin && !currentUser.is_super_admin) {
-          await supabase.from('profiles').update({ sensitive_vault_pin: hashedAttempt }).eq('id', currentUser.id);
-          toast.success("New Secure 4-Digit PIN Configured & Locked!");
+        const hashedAttempt = await hashPin(pinAttempt);
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('sensitive_vault_pin')
+          .eq('id', currentUser.id)
+          .single();
+
+        if (profileError) throw new Error(`Profile sync failed: ${profileError.message}`);
+
+        // Setup PIN if first time
+        if (!profile.sensitive_vault_pin) {
+           const { error: updateError } = await supabase.from('profiles').update({ sensitive_vault_pin: hashedAttempt }).eq('id', currentUser.id);
+           if (updateError) throw new Error(`Failed to save new PIN: ${updateError.message}`);
+           toast.success("New Secure 4-Digit PIN Configured!", { id: loadingToast });
+        } else if (profile.sensitive_vault_pin !== hashedAttempt) {
+           throw new Error("Incorrect Security PIN.");
         }
+      }
 
-        let query = supabase.from('receipts').select('*').eq('is_sensitive', true).order('created_at', { ascending: false });
-        if (!currentUser.is_super_admin) query = query.eq('uploaded_by', currentUser.id); 
-        
-        const { data: sReceipts } = await query;
-        
-        const pathsToSign = [];
-        const validReceipts = [];
+      // ==========================================
+      // 2. FETCH RECEIPTS
+      // ==========================================
+      let query = supabase.from('receipts').select('*').eq('is_sensitive', true).order('created_at', { ascending: false });
+      if (!currentUser.is_super_admin) query = query.eq('uploaded_by', currentUser.id);
 
-        (sReceipts || []).forEach(r => {
-          if (!r.cloudinary_public_id || !r.file_url) return;
-          const extension = r.file_url.split('.').pop(); 
-          const exactPathToSign = `${r.cloudinary_public_id}.${extension}`; 
-          pathsToSign.push(exactPathToSign);
-          validReceipts.push(r);
+      const { data: sReceipts, error: receiptError } = await query;
+      if (receiptError) throw new Error(`Failed to fetch receipts: ${receiptError.message}`);
+
+      const pathsToSign = [];
+      const validReceipts = [];
+
+      (sReceipts || []).forEach(r => {
+        if (!r.cloudinary_public_id || !r.file_url) return;
+        const extension = r.file_url.split('.').pop() || 'jpg';
+        pathsToSign.push(`${r.cloudinary_public_id}.${extension}`);
+        validReceipts.push(r);
+      });
+
+      // ==========================================
+      // 3. SIGN SECURE CLOUDINARY URLS
+      // ==========================================
+      if (pathsToSign.length > 0) {
+        const { data: sigData, error: funcError } = await supabase.functions.invoke('sign-cloudinary-url', {
+          body: { paths_to_sign: pathsToSign }
         });
 
-        if (pathsToSign.length > 0) {
-          const { data: sigData, error: funcError } = await supabase.functions.invoke('sign-cloudinary-url', { 
-            body: { paths_to_sign: pathsToSign } 
-          });
-
-          if (funcError) throw funcError;
-
-          const fullySignedReceipts = validReceipts.map((receipt, index) => {
-             const signature = sigData.signatures[index];
-             const extension = receipt.file_url.split('.').pop();
-             const cloudName = receipt.file_url.split('/res.cloudinary.com/')[1].split('/')[0];
-             const versionMatch = receipt.file_url.match(/\/v(\d+)\//);
-             const versionString = versionMatch ? `v${versionMatch[1]}` : 'v1';
-             const exactPathToSign = `${receipt.cloudinary_public_id}.${extension}`; 
-             const secureUrl = `https://res.cloudinary.com/${cloudName}/image/authenticated/s--${signature}--/${versionString}/${exactPathToSign}`;
-             
-             return { ...receipt, signed_url: secureUrl };
-          });
-          
-          setSensitiveReceipts(fullySignedReceipts);
-        } else {
-          setSensitiveReceipts([]);
+        if (funcError) {
+           throw new Error(`Edge Function Blocked: ${funcError.message} (Did you forget to add CORS headers to sign-cloudinary-url?)`);
+        }
+        if (!sigData || !sigData.signatures) {
+           throw new Error("Cloudinary Edge Function returned empty signature data.");
         }
 
-        setIsUnlocked(true);
-        setPin(['', '', '', '']); // Clear the PIN on successful unlock
-        toast.success(currentUser.is_super_admin ? "Master Override: Vault Unlocked" : "Vault Unlocked.");
+        const fullySignedReceipts = validReceipts.map((receipt, index) => {
+           const signature = sigData.signatures[index];
+           const extension = receipt.file_url.split('.').pop() || 'jpg';
+           const cloudName = receipt.file_url.split('/res.cloudinary.com/')[1].split('/')[0];
+           const versionMatch = receipt.file_url.match(/\/v(\d+)\//);
+           const versionString = versionMatch ? `v${versionMatch[1]}` : 'v1';
+           const exactPathToSign = `${receipt.cloudinary_public_id}.${extension}`;
+           const secureUrl = `https://res.cloudinary.com/${cloudName}/image/authenticated/s--${signature}--/${versionString}/${exactPathToSign}`;
+
+           return { ...receipt, signed_url: secureUrl };
+        });
+
+        setSensitiveReceipts(fullySignedReceipts);
       } else {
-        toast.error("Access Denied: Incorrect PIN.");
+        setSensitiveReceipts([]);
       }
+
+      // ==========================================
+      // 4. LOG ADMIN OVERRIDE & UNLOCK
+      // ==========================================
+      if (currentUser.is_super_admin) {
+         await supabase.from('audit_logs').insert({
+            id: crypto.randomUUID(),
+            action_taken: 'ADMIN_VAULT_OVERRIDE',
+            performed_by: currentUser.id,
+            notes: `Master Admin bypassed global receipt vault PIN.`,
+            action_timestamp: new Date().toISOString()
+         });
+      }
+
+      setIsUnlocked(true);
+      setPin(['', '', '', '']);
+      toast.success(currentUser.is_super_admin ? "Master Override: Vault Unlocked" : "Vault Unlocked.", { id: loadingToast });
+
     } catch (err) {
-      toast.error("System error verifying credentials.");
-      console.error(err);
+      console.error("Vault Unlock Crash:", err);
+      // 🔥 This explicitly shows the exact error on the screen!
+      toast.error(err.message, { id: loadingToast, duration: 8000 });
     }
   };
 
