@@ -148,7 +148,7 @@ export default function ReceiptForm({ currentUser }) {
           </div>
 
           <div className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center bg-slate-50 relative hover:bg-slate-100 cursor-pointer transition-colors">
-            <input type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+            <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
             {previewUrl ? (
               <div className="space-y-2">
                 <img src={previewUrl} className="max-h-48 mx-auto rounded-lg shadow-sm" alt="Preview" />
