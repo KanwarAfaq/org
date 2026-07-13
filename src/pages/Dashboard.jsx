@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import emailjs from '@emailjs/browser';
 import OneSignal from 'react-onesignal'; 
-
+import { v4 as uuidv4 } from 'uuid';
 export default function Dashboard({ currentUser }) {
   const navigate = useNavigate();
   const [currentTab, setCurrentTab] = useState('workflow'); 
@@ -145,13 +145,13 @@ export default function Dashboard({ currentUser }) {
     if (!amount) return toast.error('Please enter an amount.');
 
     const finalCategoryString = activeCats.join(' + ');
-    const sharedGroupId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+    const sharedGroupId = uuidv4();
     let structuredContent = `[${finalCategoryString.toUpperCase()}] Request Processing - Amount: $${amount}`;
     if (note.trim()) structuredContent += ` || NOTE: ${note.trim()}`;
 
     try {
       const submissionPromises = selectedTagUsers.map(async (verifierId) => {
-        const generatedPostId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+        const generatedPostId = uuidv4();
         const groupTrackingToken = `GROUP_ID:${sharedGroupId}`;
         const verifierData = allUsers.find(u => u.id === verifierId);
 
@@ -164,7 +164,7 @@ export default function Dashboard({ currentUser }) {
         if (postError) throw postError;
 
         await supabase.from('audit_logs').insert({
-          id: Date.now().toString(36) + Math.random().toString(36).substring(2), post_id: generatedPostId, action_taken: 'CREATED',
+          id: uuidv4(), post_id: generatedPostId, action_taken: 'CREATED',
           performed_by: currentUser.id, notes: `Created request group ${sharedGroupId}. Assigned: ${verifierId}`,
           action_timestamp: new Date().toISOString()
         });
@@ -245,7 +245,7 @@ export default function Dashboard({ currentUser }) {
           await supabase.from('company_treasury').update({ total_initial_budget: newTreasury }).eq('id', 1);
 
           await supabase.from('member_wallet_logs').insert({
-            id: Date.now().toString(36) + Math.random().toString(36).substring(2), member_id: targetPost.author_id, post_id: postId,
+            id: uuidv4(), member_id: targetPost.author_id, post_id: postId,
             prev_amount: profile?.total_amount_claimed || 0, delta_amount: extractedAmount, new_amount: newAmount,
             notes: `Workflow Approved: ${targetPost?.content.split(' || ')[0]}`, action_timestamp: new Date().toISOString()
           });
@@ -263,7 +263,7 @@ export default function Dashboard({ currentUser }) {
       }
 
       await supabase.from('audit_logs').insert({ 
-        id: Date.now().toString(36) + Math.random().toString(36).substring(2), post_id: postId, action_taken: status.toUpperCase(), performed_by: currentUser.id, 
+        id: uuidv4(), post_id: postId, action_taken: status.toUpperCase(), performed_by: currentUser.id, 
         notes: customReason || `Handled state as ${status}.`, action_timestamp: new Date().toISOString()
       });
 
@@ -298,7 +298,7 @@ export default function Dashboard({ currentUser }) {
   const handleResubmitPost = async (postId, updatedContent) => {
     if (!updatedContent?.trim()) return toast.error('Content cannot be blank.');
     await supabase.from('posts').update({ content: updatedContent, status: 'pending', flag_color: 'none', action_reason: null, updated_at: new Date().toISOString() }).eq('id', postId);
-    await supabase.from('audit_logs').insert({ id: Date.now().toString(36) + Math.random().toString(36).substring(2), post_id: postId, action_taken: 'RE-SUBMITTED', performed_by: currentUser.id, notes: 'Author revised content.', action_timestamp: new Date().toISOString() });
+    await supabase.from('audit_logs').insert({ id: uuidv4(), post_id: postId, action_taken: 'RE-SUBMITTED', performed_by: currentUser.id, notes: 'Author revised content.', action_timestamp: new Date().toISOString() });
     toast.success('Revised post sent!');
     fetchDashboardData();
   };
