@@ -5,7 +5,13 @@
   "plugins": {
     "CapacitorUpdater": {
       "autoUpdate": true,
-      "stats": true
+      "stats": true,
+      "disableAutoUpdateOnDev": true,
+      "development": false,
+      "channel": "production"
     }
+  },
+  "server": {
+    "androidScheme": "orgapp"
   }
 }

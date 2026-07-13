@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
-import { Toaster } from 'react-hot-toast'; 
+import { Toaster, ToastBar, toast } from 'react-hot-toast'; // 👈 Make sure to import ToastBar and toast
 import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
 import SuperAdminLayout from './pages/SuperAdminLayout';
@@ -170,7 +170,26 @@ export default function App() {
 
   return (
     <>
-      <Toaster position="top-right" toastOptions={{ className: 'text-sm font-bold shadow-xl rounded-xl' }} />
+      <Toaster position="top-center" toastOptions={{ duration: 4000 }}>
+  {(t) => (
+    <ToastBar toast={t}>
+      {({ icon, message }) => (
+        <div className="flex items-center gap-2">
+          {icon}
+          {message}
+          {t.type !== 'loading' && (
+            <button 
+              onClick={() => toast.dismiss(t.id)} 
+              className="ml-2 w-6 h-6 flex items-center justify-center bg-slate-200 hover:bg-slate-300 rounded-full text-xs transition-colors"
+            >
+              ❌
+            </button>
+          )}
+        </div>
+      )}
+    </ToastBar>
+  )}
+</Toaster>
       {renderAppContent()}
     </>
   );
