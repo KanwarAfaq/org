@@ -381,7 +381,7 @@ export default function Dashboard({ currentUser }) {
           <button onClick={handleRefreshAll} disabled={loading} className="text-[10px] bg-slate-800 border border-slate-700 text-emerald-400 px-3 py-2 rounded font-mono hover:bg-slate-700 flex items-center gap-2 transition-colors disabled:opacity-50">
             {loading ? <span className="animate-spin text-sm leading-none">⏳</span> : <span>🔄</span>}REFRESH DATA
           </button>
-          <button onClick={handleSignOut} className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900">⏻</button>
+          <button onClick={handleSignOut} className="text-[10px] bg-red-950/40 border border-red-900/50 text-red-400 px-3 py-2 rounded font-mono hover:bg-red-900">⏻Sign Out</button>
         </div>
       </div>
 
