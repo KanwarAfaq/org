@@ -57,29 +57,12 @@ export default function App() {
       // 🚀 THE FIX: We removed the 'PASSWORD_RECOVERY' trap from here!
       if (session) {
         fetchAndEnsureProfile(session.user);
+        window.location.reload();
       } else {
         setCurrentUser(null);
         setLoading(false);
       }
     });
-const setupDeepLink = CapacitorApp.addListener('appUrlOpen', (event) => {
-      console.log("Deep Link Intercepted:", event.url);
-      
-      // Split the URL to grab everything after your custom scheme
-      // Example: splits "app.vercel.org99://login-callback?code=123" into "login-callback?code=123"
-      const urlPart = event.url.split('app.vercel.org99://')[1];
-      
-      if (urlPart) {
-        // Force the app's internal web engine to navigate to this exact route.
-        // This triggers the standard web behavior, allowing the Supabase client 
-        // to automatically detect the ?code= or #access_token= and log you in!
-        window.location.href = window.location.origin + '/' + urlPart;
-      }
-    });
-
-    return () => {
-      setupDeepLink.then(listener => listener.remove());
-    };
     
     return () => subscription.unsubscribe();
   }, []);

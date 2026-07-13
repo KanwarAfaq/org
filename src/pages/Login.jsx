@@ -185,24 +185,15 @@ export default function Login() {
     finally { setLoading(false); }
   };
 
-  const handleGoogleLogin = async () => {
-  // 1. Get the Supabase OAuth URL
-  const { data, error } = await supabase.auth.signInWithOAuth({ 
-    provider: 'google',
-    options: {
-      redirectTo: 'app.vercel.org99://login-callback',
-      skipBrowserRedirect: true // 👈 This is key for mobile
-    }
-  });
-
-  if (error) return toast.error(error.message);
-
-  // 2. Open the login page INSIDE the app's browser window
-  await Browser.open({ 
-    url: data.url,
-    windowName: '_self' // 👈 This keeps the session inside the app
-  });
-};
+ const handleGoogleLogin = async () => {
+    // This is the most stable method: it lets the browser handle the redirect naturally
+    await supabase.auth.signInWithOAuth({ 
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin // Stay on the standard redirect flow
+      }
+    }); 
+  };
   const formatTime = (seconds) => { const m = Math.floor(seconds / 60); const s = seconds % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
 
   return (
