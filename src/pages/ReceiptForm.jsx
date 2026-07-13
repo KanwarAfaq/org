@@ -29,22 +29,25 @@ export default function ReceiptForm({ currentUser }) {
 
  const triggerNativeCameraPrompt = async () => {
     try {
-      // 1. This triggers the native mobile menu (Camera vs. Gallery)
+      // 1. Trigger camera, but ask for Base64 data instead of a restricted Uri
       const image = await Camera.getPhoto({
         quality: 80,
         allowEditing: false,
-        resultType: CameraResultType.Uri,
-        source: CameraSource.Prompt // 👈 This is the magic word that forces the choice menu!
+        resultType: CameraResultType.Base64, // 👈 FIX 1: Change to Base64
+        source: CameraSource.Prompt 
       });
 
-      // 2. Convert the native image into a web File object for Cloudinary
-      const response = await fetch(image.webPath);
+      // 2. Create a secure Data URL string from the Base64 data
+      const base64Data = `data:image/jpeg;base64,${image.base64String}`;
+
+      // 3. Convert the Data URL into a web File object (This bypasses mobile security blocks!)
+      const response = await fetch(base64Data); // 👈 FIX 2: Fetch the data string, not the file path
       const blob = await response.blob();
       const newFile = new File([blob], `receipt_${Date.now()}.jpg`, { type: 'image/jpeg' });
 
-      // 3. Save it to state just like before
+      // 4. Save to state
       setFile(newFile);
-      setPreviewUrl(image.webPath);
+      setPreviewUrl(base64Data); // Use the base64 string for the image preview
     } catch (error) {
       console.warn("User cancelled or camera error:", error);
     }
