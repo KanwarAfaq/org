@@ -42,7 +42,7 @@ export default function TreasuryManager({
       const { error } = await supabase
         .from('audit_logs')
         .insert({
-          id: crypto.randomUUID(),
+          id: Date.now().toString(36) + Math.random().toString(36).substring(2),
           post_id: null,
           action_taken: 'ADMIN_TREASURY_ADJUST',
           performed_by: currentUser?.id || null,

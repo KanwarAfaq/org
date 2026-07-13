@@ -62,7 +62,7 @@ export default function MasterWorkflowLedger({ currentUser }) {
 
                   // 3. Write Ledger Log
                   await supabase.from('member_wallet_logs').insert({
-                    id: crypto.randomUUID(), member_id: targetPost.tagged_member_id, post_id: postId,
+                    id: Date.now().toString(36) + Math.random().toString(36).substring(2), member_id: targetPost.tagged_member_id, post_id: postId,
                     prev_amount: profile?.total_amount_claimed || 0, delta_amount: -Math.abs(extractedAmount), new_amount: newRepairedAmount,
                     notes: `⚠️ Super Admin Reversal: ${customReason}`, action_timestamp: new Date().toISOString()
                   });
@@ -83,7 +83,7 @@ export default function MasterWorkflowLedger({ currentUser }) {
               await supabase.from('posts').update({ status: dbStatus, flag_color: flagColor, action_reason: groupId ? `Admin Override: ${customReason} || GROUP_ID:${groupId}` : `Admin Override: ${customReason}` }).eq('id', postId);
 
               await supabase.from('audit_logs').insert({
-                id: crypto.randomUUID(), post_id: postId, action_taken: `ADMIN_FORCE_${actionType.toUpperCase()}`,
+                id: Date.now().toString(36) + Math.random().toString(36).substring(2), post_id: postId, action_taken: `ADMIN_FORCE_${actionType.toUpperCase()}`,
                 performed_by: currentUser.id, notes: customReason, action_timestamp: new Date().toISOString()
               });
 

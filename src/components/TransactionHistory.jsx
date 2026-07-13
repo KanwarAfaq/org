@@ -35,13 +35,13 @@ export default function TransactionHistory({ allPosts = [], filterStatus, setFil
       await supabase.from('company_treasury').update({ total_initial_budget: newTreasuryBal }).eq('id', 1);
 
       await supabase.from('member_wallet_logs').insert({
-        id: crypto.randomUUID(), member_id: memberId, post_id: postId,
+        id: Date.now().toString(36) + Math.random().toString(36).substring(2), member_id: memberId, post_id: postId,
         prev_amount: currentProfileBal, delta_amount: deltaAmount, new_amount: newProfileBal,
         notes: reason, action_timestamp: new Date().toISOString()
       });
 
       await supabase.from('audit_logs').insert({
-        id: crypto.randomUUID(), post_id: postId, action_taken: actionTaken,
+        id: Date.now().toString(36) + Math.random().toString(36).substring(2), post_id: postId, action_taken: actionTaken,
         performed_by: adminId, notes: reason, action_timestamp: new Date().toISOString()
       });
 
