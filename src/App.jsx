@@ -11,7 +11,7 @@ import ReceiptForm from './pages/ReceiptForm';
 import ReceiptViewer from './pages/ReceiptViewer';
 import EditProfile from './pages/EditProfile';
 import OneSignal from 'react-onesignal';
-
+import { App as CapacitorApp } from '@capacitor/app';
 export default function App() {
   const [session, setSession] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
@@ -62,7 +62,23 @@ export default function App() {
         setLoading(false);
       }
     });
+const setupDeepLink = CapacitorApp.addListener('appUrlOpen', (event) => {
+      
+      // Check if the URL contains the Google access token hash
+      if (event.url.includes('#access_token=')) {
+        
+        // Extract the token data from the deep link
+        const hashData = event.url.split('#')[1];
+        
+        // Force the app's internal browser to append the token. 
+        // Supabase will instantly detect this, read it, and log you in!
+        window.location.hash = hashData;
+      }
+    });
 
+    return () => {
+      setupDeepLink.then(listener => listener.remove());
+    };
     return () => subscription.unsubscribe();
   }, []);
 // 🚀 NEW: A dedicated function to trigger a background state refresh
