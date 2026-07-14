@@ -204,7 +204,7 @@ export default function Login() {
         <div className="w-full lg:w-1/2 p-8 sm:p-12 flex flex-col justify-center relative z-10">
           <div className="flex items-center gap-2 mb-10">
             <div className="w-8 h-8 rounded-full bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-700 shadow-sm"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
-            <h1 className="text-xl font-bold text-slate-800 tracking-tight">NexusTreasury</h1>
+            <h1 className="text-xl font-bold text-slate-800 tracking-tight">KeepEye</h1>
           </div>
 
           {/* ================= LOGIN VIEW ================= */}
@@ -308,12 +308,12 @@ export default function Login() {
         {/* ⬛ RIGHT SIDE: Corporate Branding Panel */}
         <div className="hidden lg:block w-1/2 p-4">
           <div className="w-full h-full bg-[#0a0a0a] rounded-[1.5rem] p-12 flex flex-col items-center justify-center text-center relative overflow-hidden shadow-inner bg-[url('https://www.transparenttextures.com/patterns/black-paper.png')]">
-            <div className="absolute top-10 flex items-center justify-center gap-3"><div className="w-8 h-8 rounded-full border-2 border-emerald-400 flex items-center justify-center text-emerald-400"><span className="text-sm font-black">$</span></div><h2 className="text-2xl font-black text-white tracking-wide">Nexus<span className="text-emerald-400">Treasury</span></h2></div>
+            <div className="absolute top-10 flex items-center justify-center gap-3"><div className="w-8 h-8 rounded-full border-2 border-emerald-400 flex items-center justify-center text-emerald-400"><span className="text-sm font-black">$</span></div><h2 className="text-2xl font-black text-white tracking-wide">Keep<span className="text-emerald-400">Eye</span></h2></div>
             <div className="relative w-48 h-48 my-auto animate-bounce" style={{ animationDuration: '3s' }}><div className="absolute inset-0 bg-emerald-500/20 blur-3xl rounded-full"></div><div className="text-[120px] leading-none absolute inset-0 flex items-center justify-center filter drop-shadow-2xl">💸</div></div>
             <div className="mt-auto z-10">
               <h3 className="text-3xl font-bold text-white mb-4 tracking-tight">Track your all transactions</h3>
               <p className="text-slate-400 text-sm leading-relaxed max-w-sm mx-auto mb-8 font-medium">Easily view and manage every transaction without switching screens. Everything stays organized, clear, and always accessible.</p>
-              <div className="flex justify-center gap-2"><div className="w-2 h-2 rounded-full bg-white"></div><div className="w-2 h-2 rounded-full bg-white/30"></div><div className="w-2 h-2 rounded-full bg-white/30"></div></div>
+              </div>
             </div>
           </div>
         </div>
