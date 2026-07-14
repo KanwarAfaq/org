@@ -313,7 +313,7 @@ export default function Login() {
             <div className="mt-auto z-10">
               <h3 className="text-3xl font-bold text-white mb-4 tracking-tight">Track your all transactions</h3>
               <p className="text-slate-400 text-sm leading-relaxed max-w-sm mx-auto mb-8 font-medium">Easily view and manage every transaction without switching screens. Everything stays organized, clear, and always accessible.</p>
-              </div>
+            
             </div>
           </div>
         </div>
